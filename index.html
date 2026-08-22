@@ -31,19 +31,25 @@
         import { getFirestore, doc, getDoc, addDoc, setDoc, deleteDoc, collection, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         window.initFirebase = async () => {
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'csd-pakkret-app';
-            let config = {};
-            if (typeof __firebase_config !== 'undefined') {
-                config = JSON.parse(__firebase_config);
-            } else {
-                console.warn("No real Firebase config found. Online features will be mocked in local environment.");
-                return null;
-            }
+            const appId = 'ssdinvestigation-app';
+            
+            // ข้อมูลการเชื่อมต่อ Firebase ของคุณ
+            const config = {
+                apiKey: "AIzaSyCLXW_cr-5VuaQqR3wHNtBtHe5YJ77buno",
+                authDomain: "ssdinvestigation.firebaseapp.com",
+                projectId: "ssdinvestigation",
+                storageBucket: "ssdinvestigation.firebasestorage.app",
+                messagingSenderId: "766454429471",
+                appId: "1:766454429471:web:c6e0c1dc14f6206b13222a",
+                measurementId: "G-6K3X8G7DZ4"
+            };
 
             try {
                 const app = initializeApp(config);
                 const auth = getAuth(app);
                 const db = getFirestore(app);
+                
+                // ล็อกอินแบบไม่ระบุตัวตนอัตโนมัติ
                 await signInAnonymously(auth);
 
                 return { db, auth, appId, collection, addDoc, setDoc, getDoc, getDocs, deleteDoc, doc };
@@ -114,18 +120,17 @@
                 try {
                     const fb = await window.initFirebase();
                     if (fb) {
-                        const casesRef = fb.collection(fb.db, 'artifacts', fb.appId, 'public', 'data', 'cases');
+                        const casesRef = fb.collection(fb.db, 'investigationData', 'cases', 'list');
                         const snapshot = await fb.getDocs(casesRef);
                         let list = [];
                         snapshot.forEach(docSnap => {
                             list.push({ id: docSnap.id, ...docSnap.data() });
                         });
                         setAllCasesHistory(list.sort((a,b) => new Date(b.updatedAt) - new Date(a.updatedAt)));
-                    } else {
-                        setAllCasesHistory(mockOnlineDB);
                     }
                 } catch (e) {
                     console.error("Error fetching history", e);
+                    showModal('เกิดข้อผิดพลาดในการโหลดข้อมูล', 'โปรดตรวจสอบสิทธิ์ Rules ใน Firestore ว่าเปิดให้ใช้งานแล้วหรือไม่');
                 }
             };
 
@@ -154,24 +159,17 @@
                     const fb = await window.initFirebase();
                     if (fb) {
                         if (currentCaseId) {
-                            const docRef = fb.doc(fb.db, 'artifacts', fb.appId, 'public', 'data', 'cases', currentCaseId);
+                            const docRef = fb.doc(fb.db, 'investigationData', 'cases', 'list', currentCaseId);
                             await fb.setDoc(docRef, caseData, { merge: true });
                         } else {
-                            const colRef = fb.collection(fb.db, 'artifacts', fb.appId, 'public', 'data', 'cases');
+                            const colRef = fb.collection(fb.db, 'investigationData', 'cases', 'list');
                             const docRef = await fb.addDoc(colRef, caseData);
                             setCurrentCaseId(docRef.id);
                         }
+                        showModal('บันทึกสำเร็จ', 'ข้อมูลถูกบันทึกและแชร์เข้าสู่ระบบออนไลน์เรียบร้อยแล้ว ผู้ใช้อื่นสามารถตรวจสอบได้ในหน้าประวัติ');
                     } else {
-                        if (currentCaseId) {
-                            const idx = mockOnlineDB.findIndex(m => m.id === currentCaseId);
-                            if(idx > -1) mockOnlineDB[idx] = { ...caseData, id: currentCaseId };
-                        } else {
-                            const newId = 'case_' + Date.now();
-                            mockOnlineDB.push({ ...caseData, id: newId });
-                            setCurrentCaseId(newId);
-                        }
+                        showModal('เกิดข้อผิดพลาด', 'ไม่สามารถเชื่อมต่อฐานข้อมูลได้');
                     }
-                    showModal('บันทึกสำเร็จ', 'ข้อมูลถูกบันทึกและแชร์เข้าสู่ระบบออนไลน์เรียบร้อยแล้ว ผู้ใช้อื่นสามารถตรวจสอบได้ในหน้าประวัติ');
                 } catch (error) {
                     showModal('เกิดข้อผิดพลาด', 'ไม่สามารถบันทึกข้อมูลออนไลน์ได้: ' + error.message);
                 }
@@ -186,10 +184,8 @@
                         try {
                             const fb = await window.initFirebase();
                             if (fb) {
-                                const docRef = fb.doc(fb.db, 'artifacts', fb.appId, 'public', 'data', 'cases', caseId);
+                                const docRef = fb.doc(fb.db, 'investigationData', 'cases', 'list', caseId);
                                 await fb.deleteDoc(docRef);
-                            } else {
-                                mockOnlineDB = mockOnlineDB.filter(m => m.id !== caseId);
                             }
                             
                             if (currentCaseId === caseId) {
@@ -604,7 +600,6 @@
                                                             </span>
                                                         </td>
                                                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                                            {/* แยกปุ่มให้ชัดเจน: ดู Dashboard และ ดู Mind Map */}
                                                             <button onClick={() => loadCaseForDashboard(item)} className="text-purple-600 hover:text-purple-900 mx-2" title="ดูสรุปข้อมูล (Dashboard)">
                                                                 <i className="fas fa-chart-pie text-lg"></i>
                                                             </button>
