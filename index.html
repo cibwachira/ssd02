@@ -3,37 +3,40 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ระบบบริหารงานสืบสวนคดีอาญา กก.1 บก.ปพ.</title>
-    
-    <script src="https://unpkg.com/react@17/umd/react.development.js"></script>
-    <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js"></script>
-    <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
-    
-    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    
-    <style>
-        body { font-family: 'Sarabun', sans-serif; background-color: #f3f4f6; }
-        .tab-active { border-bottom: 3px solid #1e3a8a; color: #1e3a8a; font-weight: 600; }
-        .tab-inactive { color: #6b7280; }
-        .tab-inactive:hover { color: #374151; border-bottom: 3px solid #d1d5db; }
-        #network-container { width: 100%; height: 600px; border: 1px solid #e5e7eb; border-radius: 0.5rem; background-color: #ffffff; }
-    </style>
+    <title>ระบบวิเคราะห์ข้อมูลเป้าหมาย กก.1 บก.ปพ.</title>
 
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- React & ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    
+    <!-- Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- vis-network สำหรับ Mind Map -->
+    <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    
+    <!-- html2pdf สำหรับส่งออก PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+    <!-- Firebase SDK -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, getDoc, addDoc, setDoc, deleteDoc, collection, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         window.initFirebase = async () => {
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-csd-app';
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'csd-pakkret-app';
             let config = {};
             if (typeof __firebase_config !== 'undefined') {
                 config = JSON.parse(__firebase_config);
             } else {
-                console.warn("No Firebase config found. Online sharing might not work locally.");
+                console.warn("No real Firebase config found. Online features will be mocked in local environment.");
                 return null;
             }
 
@@ -41,12 +44,7 @@
                 const app = initializeApp(config);
                 const auth = getAuth(app);
                 const db = getFirestore(app);
-
-                if (typeof __initial_auth_token !== 'undefined') {
-                    await signInWithCustomToken(auth, __initial_auth_token);
-                } else {
-                    await signInAnonymously(auth);
-                }
+                await signInAnonymously(auth);
 
                 return { db, auth, appId, collection, addDoc, setDoc, getDoc, getDocs, deleteDoc, doc };
             } catch (error) {
@@ -56,1058 +54,619 @@
         };
     </script>
 
-    <script>
-        // ================================================================
-        // Local Storage: ใช้เป็นฐานข้อมูลสำรอง เพื่อให้ระบบใช้งานได้จริง
-        // แม้เปิดไฟล์ HTML โดยตรง หรือยังไม่ได้ตั้งค่า Firebase
-        // ================================================================
-        window.CASE_STORAGE_KEY = 'csd_investigation_cases_v2';
-
-        window.getLocalCases = function() {
-            try {
-                const raw = localStorage.getItem(window.CASE_STORAGE_KEY);
-                const data = raw ? JSON.parse(raw) : [];
-                return Array.isArray(data) ? data : [];
-            } catch (e) {
-                console.error('Local storage read error:', e);
-                return [];
-            }
-        };
-
-        window.saveLocalCase = function(caseData, caseId) {
-            const list = window.getLocalCases();
-            const id = caseId || ('local_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8));
-            const now = Date.now();
-            const index = list.findIndex(item => item.id === id);
-            const existing = index >= 0 ? list[index] : {};
-            const saved = {
-                ...existing,
-                ...caseData,
-                id,
-                createdAt: existing.createdAt || caseData.createdAt || now,
-                updatedAt: now,
-                storage: 'local'
-            };
-            if (index >= 0) list[index] = saved;
-            else list.unshift(saved);
-            localStorage.setItem(window.CASE_STORAGE_KEY, JSON.stringify(list));
-            return saved;
-        };
-
-        window.deleteLocalCase = function(caseId) {
-            const list = window.getLocalCases().filter(item => item.id !== caseId);
-            localStorage.setItem(window.CASE_STORAGE_KEY, JSON.stringify(list));
-        };
-
-        window.hasFirebaseConfig = function() {
-            return typeof __firebase_config !== 'undefined' && !!__firebase_config;
-        };
-    </script>
+    <style>
+        body { font-family: 'Sarabun', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f3f4f6; }
+        .tab-active { border-bottom: 2px solid #2563eb; color: #2563eb; font-weight: 600; }
+        .tab-inactive { color: #6b7280; font-weight: 500; hover:text-gray-900; }
+        #network-canvas { width: 100%; height: 600px; border: 1px solid #e5e7eb; border-radius: 0.5rem; background-color: #ffffff; }
+    </style>
 </head>
 <body>
     <div id="root"></div>
 
     <script type="text/babel">
-        const initialCategories = [
-            { id: 'cat1', title: "1. ข้อมูลทะเบียนราษฎร์", fields: [{ id: '1_1', label: "ชื่อ สกุล ภาษาไทย" }, { id: '1_2', label: "ชื่อ สกุล ภาษาอังกฤษ" }, { id: '1_3', label: "เลขบัตรประชาชน" }, { id: '1_4', label: "ชื่อ สกุล เดิม" }, { id: '1_5', label: "ชื่อ สกุล บิดา มารดา" }, { id: '1_6', label: "เลขบัตร ปชช. บิดามารดา" }, { id: '1_7', label: "ภูมิลำเนาที่อยู่ปัจจุบัน" }, { id: '1_8', label: "การเปลี่ยนชื่อ สกุล" }, { id: '1_9', label: "การเปลี่ยนที่อยู่" }] },
-            { id: 'cat2', title: "2. ครอบครัว / เครือญาติ", fields: [{ id: '2_1', label: "บิดา/มารดา/ปู่/ย่า/ตา/ยาย" }, { id: '2_2', label: "สามี/ภรรยา" }, { id: '2_3', label: "บุตร/หลาน" }, { id: '2_4', label: "พี่น้อง/ลูกพี่ลูกน้อง" }, { id: '2_5', label: "เพื่อนสนิท" }] },
-            { id: 'cat3', title: "3. สถานที่ทำงาน", fields: [{id: '3_1', label: 'ประกันสังคม'}, {id: '3_2', label: 'ยังทำงานอยู่'}, {id: '3_3', label: 'ลาออก'}, {id: '3_4', label: 'เพื่อนร่วมงาน'}, {id: '3_5', label: 'เบอร์ติดต่อที่ทำงาน'}, {id: '3_6', label: 'เบอร์โทรศัพท์ส่วนตัว'}, {id: '3_7', label: 'ข้อมูลคนค้ำประกันเข้าทำงาน'}, {id: '3_8', label: 'ที่อยู่ที่ให้ไว้ตอนสมัครงาน'}] },
-            { id: 'cat4', title: "4. การรักษาพยาบาล", fields: [{id: '4_1', label: 'สิทธิรักษาพยาบาล'}, {id: '4_2', label: 'โรงพยาบาล'}, {id: '4_3', label: 'ที่ตั้งสถานพยาบาล'}, {id: '4_4', label: 'ข้อมูลญาติที่ติดต่อได้'}] },
-            { id: 'cat5', title: "5. ทรัพย์สินและอสังหาริมทรัพย์", fields: [{id: '5_1', label: 'ประเภทที่พักอาศัย'}, {id: '5_2', label: 'บ้าน/คอนโด/อาคารพาณิชย์'}, {id: '5_3', label: 'ตำแหน่งที่ตั้งที่ดิน/ทรัพย์สิน'}, {id: '5_4', label: 'ประเภทที่ดิน'}, {id: '5_5', label: 'ประวัติการซื้อขาย/รับโอน'}] },
-            { id: 'cat6', title: "6. ข้อมูลยานพาหนะ", fields: [{id: '6_1', label: 'ยานพาหนะที่เป็นเจ้าของกรรมสิทธิ์'}, {id: '6_2', label: 'ยานพาหนะในครอบครอง'}, {id: '6_3', label: 'ยานพาหนะที่ใช้งานจริง'}, {id: '6_4', label: 'สถานภาพรถปกติ/อายัด'}, {id: '6_5', label: 'วันสิ้นอายุภาษี'}, {id: '6_6', label: 'ตำหนิรูปพรรณพิเศษรถ'}, {id: '6_7', label: 'รายการเปลี่ยนแปลงรถ'}] },
-            { id: 'cat7', title: "7. ใบอนุญาตขับขี่", fields: [{id: '7_1', label: 'ประเภทใบอนุญาตขับรถ'}, {id: '7_2', label: 'ที่อยู่ผู้มีใบอนุญาตขับขี่'}, {id: '7_3', label: 'ระบบ GPS (รถรับจ้างสาธารณะ)'}, {id: '7_4', label: 'วันอนุญาต/วันหมดอายุ'}, {id: '7_5', label: 'ชื่อ สกุล ภาษาไทย/ภาษาอังกฤษ'}, {id: '7_6', label: 'นายทะเบียน/ผู้ออกใบอนุญาต'}] },
-            { id: 'cat8', title: "8. การเดินทางผ่านจุดสกัด", fields: [{id: '8_1', label: 'License Plate (ทะเบียนรถ/ยี่ห้อ/รุ่น/สี)'}, {id: '8_2', label: 'ตำแหน่งรถเป้าหมายในปัจจุบัน'}, {id: '8_3', label: 'ว/ด/ป ที่ผ่านด่าน-จุดสกัด'}, {id: '8_4', label: 'คำนวณจุดแวะ/พักเป้าหมาย'}, {id: '8_5', label: 'วิเคราะห์เส้นทาง/สถานที่หลบหนี'}, {id: '8_6', label: 'ตำหนิรูปพรรณรถ/ทะเบียน'}] },
-            { id: 'cat9', title: "9. ข้อมูลโทรศัพท์มือถือ", fields: [{id: '9_1', label: 'ผู้ให้บริการ AIS/TRUE/DTAC'}, {id: '9_2', label: 'ระบบสัญญาณ 3g 4g 5g'}, {id: '9_3', label: 'หมายเลขโทรศัพท์มือถือ'}, {id: '9_4', label: 'ชื่อผู้จดทะเบียน/ที่อยู่จัดส่งบิล'}, {id: '9_5', label: 'เครือข่ายบุคคลที่ติดต่อด้วย'}, {id: '9_6', label: 'ทำโครงข่ายโทรศัพท์มือถือ i2'}, {id: '9_7', label: 'วิเคราะห์วงจรการใช้ชีวิต'}] },
-            { id: 'cat10', title: "10. บริษัทไฟแนนซ์ / สินเชื่อ", fields: [{id: '10_1', label: 'ที่อยู่ที่ให้ไว้'}, {id: '10_2', label: 'ที่อยู่จัดส่งบิล'}, {id: '10_3', label: 'ชื่อ-ที่อยู่ผู้ค้ำประกัน'}, {id: '10_4', label: 'ประวัติการชำระ'}, {id: '10_5', label: 'แผนที่บ้านผู้เช่าซื้อ/ผู้ค้ำประกัน'}] },
-            { id: 'cat11', title: "11. การเงิน", fields: [{id: '11_1', label: 'ชื่อ-สกุล ผู้เปิดบัญชีธนาคาร'}, {id: '11_2', label: 'ข้อมูลฝาก/ถอน/โอน/รับโอน'}, {id: '11_3', label: 'IP Address ที่ทำรายการทางอินเตอร์เน็ต'}, {id: '11_4', label: 'คำขอเปิดบัญชี'}, {id: '11_5', label: 'การกดเงิน จากตู้ ATM'}, {id: '11_6', label: 'ข้อมูลบุคคลขอใช้บริการ'}, {id: '11_7', label: 'ที่อยู่/เบอร์โทรศัพท์ที่ให้ไว้'}, {id: '11_8', label: 'เบอร์โทรศัพท์รับ รหัส OTP/Alert'}, {id: '11_9', label: 'ข้อมูลการติดต่อ Call Center'}] },
-            { id: 'cat12', title: "12. สื่อสังคมออนไลน์", fields: [{id: '12_1', label: 'Facebook'}, {id: '12_2', label: 'Instagram'}, {id: '12_3', label: 'X'}, {id: '12_4', label: 'Tiktok'}, {id: '12_5', label: 'Youtube'}, {id: '12_6', label: 'หาความสัมพันธ์ระหว่างบุคคลในสื่อสังคมออนไลน์'}, {id: '12_7', label: 'รูปภาพที่ถ่าย'}, {id: '12_8', label: 'การเช็คอิน'}, {id: '12_9', label: 'การแท็กรูปภาพ'}] },
-            { id: 'cat13', title: "13. ข้อมูลการสั่งซื้อสินค้า", fields: [{id: '13_1', label: 'ผู้ให้บริการจัดส่ง'}, {id: '13_2', label: 'การชำระเงินผ่านบัญชี'}, {id: '13_3', label: 'ที่อยู่จัดส่ง'}] },
-            { id: 'cat14', title: "14. ข้อมูลการรับ-ส่งพัสดุ", fields: [{id: '14_1', label: 'ชื่อ-ที่อยู่ ผู้รับ/ผู้ส่ง'}, {id: '14_2', label: 'สถานที่ส่งสินค้า'}, {id: '14_3', label: 'สถานที่รับสินค้า'}, {id: '14_4', label: 'เบอร์โทรที่ให้ไว้กับผู้ให้บริการ'}] },
-            { id: 'cat15', title: "15. ข้อมูลการขอใช้ไฟฟ้า/ประปา", fields: [{id: '15_1', label: 'ข้อมูลผู้จดทะเบียน'}, {id: '15_2', label: 'ที่ตั้งสถานที่'}, {id: '15_3', label: 'ผู้ชำระค่าไฟ/น้ำ'}, {id: '15_4', label: 'ช่องทางการชำระ'}] }
+        // หมวดหมู่พื้นฐาน 15 หมวด
+        const defaultCategories = [
+            { id: 1, name: '1. ข้อมูลทะเบียนราษฎร์', fields: ['ชื่อ สกุล ภาษาไทย', 'ชื่อ สกุล ภาษาอังกฤษ', 'เลขบัตรประชาชน', 'ชื่อ สกุล เดิม', 'ชื่อ สกุล บิดา มารดา', 'เลขบัตร ปชช. บิดา มารดา', 'ภูมิลำเนาที่อยู่ปัจจุบัน', 'การเปลี่ยนชื่อ สกุล', 'การเปลี่ยนที่อยู่'] },
+            { id: 2, name: '2. ครอบครัว / เครือญาติ', fields: ['บิดา/มารดา/ปู่/ย่า/ตา/ยาย', 'สามี/ภรรยา', 'บุตร/หลาน', 'พี่น้อง/ลูกพี่ลูกน้อง', 'เพื่อนสนิท'] },
+            { id: 3, name: '3. สถานที่ทำงาน', fields: ['ประกันสังคม', 'ยังทำงานอยู่', 'ลาออก', 'เพื่อนร่วมงาน', 'เบอร์ติดต่อที่ทำงาน', 'เบอร์โทรศัพท์ส่วนตัว', 'ข้อมูลคนค้ำประกันเข้าทำงาน', 'ที่อยู่ที่ให้ไว้ตอนสมัครงาน'] },
+            { id: 4, name: '4. การรักษาพยาบาล', fields: ['สิทธิรักษาพยาบาล', 'โรงพยาบาล', 'ที่ตั้งสถานพยาบาล', 'ข้อมูลญาติที่ติดต่อได้'] },
+            { id: 5, name: '5. ทรัพย์สินและอสังหาริมทรัพย์', fields: ['ประเภทที่พักอาศัย', 'บ้าน/คอนโด/อาคารพาณิชย์', 'ตำแหน่งที่ตั้งที่ดิน/ทรัพย์สิน', 'ประเภทที่ดิน', 'ประวัติการซื้อขาย/รับโอน'] },
+            { id: 6, name: '6. ข้อมูลยานพาหนะ', fields: ['ยานพาหนะที่เป็นเจ้าของกรรมสิทธิ์', 'ยานพาหนะในครอบครอง', 'ยานพาหนะที่ใช้งานจริง', 'สถานภาพรถปกติ/อายัด', 'วันสิ้นอายุภาษี', 'ตำหนิรูปพรรณพิเศษรถ', 'รายการเปลี่ยนแปลงรถ'] },
+            { id: 7, name: '7. ใบอนุญาตขับขี่', fields: ['ประเภทใบอนุญาตขับรถ', 'ที่อยู่ผู้มีใบอนุญาตขับขี่', 'ระบบ GPS (รถรับจ้างสาธารณะ)', 'วันอนุญาต/วันหมดอายุ', 'ชื่อ สกุล (ไทย/อังกฤษ)', 'นายทะเบียน/ที่ออกใบอนุญาต'] },
+            { id: 8, name: '8. การเดินทางผ่านจุดสกัด', fields: ['ทะเบียนรถ/ยี่ห้อ/รุ่น/สี', 'ตำแหน่งรถเป้าหมายปัจจุบัน', 'ว/ด/ป ที่ผ่านด่าน-จุดสกัด', 'คำนวณจุดแวะ/พักเป้าหมาย', 'วิเคราะห์เส้นทาง/สถานที่หลบหนี'] },
+            { id: 9, name: '9. ข้อมูลโทรศัพท์มือถือ', fields: ['ผู้ให้บริการ AIS/TRUE/DTAC', 'ระบบสัญญาณ', 'หมายเลขโทรศัพท์มือถือ', 'ชื่อผู้จดทะเบียน/ที่อยู่จัดส่งบิล', 'เครือข่ายบุคคลที่ติดต่อด้วย'] },
+            { id: 10, name: '10. บริษัทไฟแนนซ์ / สินเชื่อ', fields: ['ที่อยู่ที่ให้ไว้', 'ที่อยู่จัดส่งบิล', 'ชื่อ-ที่อยู่ผู้ค้ำประกัน', 'ประวัติการชำระ', 'แผนที่บ้านผู้เช่าซื้อ/ผู้ค้ำประกัน'] },
+            { id: 11, name: '11. การเงิน', fields: ['ชื่อ-สกุล ผู้เปิดบัญชีธนาคาร', 'ข้อมูลฝาก/ถอน/โอน/รับโอน', 'IP Address ที่ทำรายการ', 'คำขอเปิดบัญชี', 'การกดเงินจากตู้ ATM'] },
+            { id: 12, name: '12. สื่อสังคมออนไลน์', fields: ['Facebook', 'Instagram', 'X', 'Tiktok', 'Youtube', 'ความสัมพันธ์ในสื่อสังคมออนไลน์', 'รูปภาพที่ถ่าย', 'การเช็คอิน'] },
+            { id: 13, name: '13. ข้อมูลการสั่งซื้อสินค้า', fields: ['ผู้ให้บริการจัดส่ง', 'การชำระเงินผ่านบัญชี', 'ที่อยู่จัดส่ง'] },
+            { id: 14, name: '14. ข้อมูลการรับ-ส่งพัสดุ', fields: ['ชื่อ-ที่อยู่ ผู้รับ/ผู้ส่ง', 'สถานที่ส่งสินค้า', 'สถานที่รับสินค้า', 'เบอร์โทรที่ให้ไว้กับผู้ส่งพัสดุ'] },
+            { id: 15, name: '15. ข้อมูลการขอใช้ไฟฟ้า/ประปา', fields: ['ข้อมูลผู้จดทะเบียนขอใช้ไฟฟ้า/ประปา', 'ที่ตั้งสถานที่ใช้ไฟฟ้า/ประปา', 'ผู้ชำระค่าไฟฟ้า/ประปา', 'ช่องทางการชำระค่าไฟฟ้า/ประปา'] }
         ];
 
-        function App() {
+        let mockOnlineDB = [];
+
+        const App = () => {
             const [activeTab, setActiveTab] = React.useState('checklist');
-            const [currentCaseId, setCurrentCaseId] = React.useState(null); // เพิ่ม State เก็บ ID เคสปัจจุบันที่กำลังแก้ไข
-            const [targetName, setTargetName] = React.useState('');
-            const [caseNumber, setCaseNumber] = React.useState('');
-            const [officerName, setOfficerName] = React.useState('');
-            const [formData, setFormData] = React.useState({});
-            const [categories, setCategories] = React.useState(initialCategories);
-            const [customFieldInputs, setCustomFieldInputs] = React.useState({});
-            const [isSaving, setIsSaving] = React.useState(false);
+            const [targetInfo, setTargetInfo] = React.useState({ caseNo: '', targetName: '', officerName: '' });
+            const [categories, setCategories] = React.useState(defaultCategories);
+            const [checklistData, setChecklistData] = React.useState({});
             
-            // State สำหรับระบบค้นหาประวัติ
-            const [searchQuery, setSearchQuery] = React.useState('');
-            const [searchResults, setSearchResults] = React.useState([]);
-            const [isSearching, setIsSearching] = React.useState(false);
-            
-            // State สำหรับประวัติ Checklist ทั้งหมดในระบบ
+            const [isReadOnly, setIsReadOnly] = React.useState(false);
+            const [currentCaseId, setCurrentCaseId] = React.useState(null);
             const [allCasesHistory, setAllCasesHistory] = React.useState([]);
+            const [searchTerm, setSearchTerm] = React.useState('');
+
+            const [modalInfo, setModalInfo] = React.useState({ isOpen: false, title: '', message: '' });
+            const [confirmModal, setConfirmModal] = React.useState({ isOpen: false, title: '', message: '', onConfirm: null });
+
+            const showModal = (title, message) => setModalInfo({ isOpen: true, title, message });
+            const closeModal = () => setModalInfo({ isOpen: false, title: '', message: '' });
             
-            // State สำหรับระบบแชร์
-            const [isSharedView, setIsSharedView] = React.useState(false);
-            const [isSharing, setIsSharing] = React.useState(false);
-            
-            // State สำหรับ Modal ทั่วไป
-            const [modalConfig, setModalConfig] = React.useState({ isOpen: false, title: '', message: '' });
-
-            // State สำหรับ Confirmation Modal (ยืนยันก่อนลบ/แก้ไข)
-            const [confirmModal, setConfirmModal] = React.useState({ 
-                isOpen: false, 
-                title: '', 
-                message: '', 
-                onConfirm: null 
-            });
-
-            const fetchAllHistory = async () => {
-                try {
-                    // แสดงข้อมูลที่บันทึกในเครื่องก่อนทันที
-                    const localList = window.getLocalCases().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-                    setAllCasesHistory(localList);
-
-                    // ถ้ามี Firebase ให้โหลดข้อมูลออนไลน์และใช้เป็นแหล่งข้อมูลหลัก
-                    const fb = await window.initFirebase();
-                    if (!fb) return;
-                    const casesRef = fb.collection(fb.db, 'artifacts', fb.appId, 'public', 'data', 'cases');
-                    const snapshot = await fb.getDocs(casesRef);
-                    const remoteList = [];
-                    snapshot.forEach(docSnap => {
-                        remoteList.push({ id: docSnap.id, ...docSnap.data(), storage: 'firebase' });
-                    });
-                    remoteList.sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
-                    setAllCasesHistory(remoteList);
-                } catch (e) {
-                    console.error('Error fetching history:', e);
-                    setAllCasesHistory(window.getLocalCases());
-                }
-            };
-
-            React.useEffect(() => {
-                const loadSharedData = async () => {
-                    const urlParams = new URLSearchParams(window.location.search);
-                    const sharedCaseId = urlParams.get('caseId');
-                    
-                    if (sharedCaseId) {
-                        try {
-                            const fb = await window.initFirebase();
-                            if (!fb) {
-                                showModal('ข้อผิดพลาด', 'ไม่สามารถเชื่อมต่อฐานข้อมูลได้');
-                                return;
-                            }
-                            
-                            const docRef = fb.doc(fb.db, 'artifacts', fb.appId, 'public', 'data', 'cases', sharedCaseId);
-                            const docSnap = await fb.getDoc(docRef);
-                            
-                            if (docSnap.exists()) {
-                                const data = docSnap.data();
-                                setCurrentCaseId(sharedCaseId);
-                                setTargetName(data.targetName || '');
-                                setCaseNumber(data.caseNumber || '');
-                                setOfficerName(data.officerName || '');
-                                setFormData(data.formData || {});
-                                if (data.categories) setCategories(data.categories);
-                                
-                                setIsSharedView(true);
-                                setActiveTab('mindmap');
-                                showModal('โหลดข้อมูลสำเร็จ', 'คุณกำลังอยู่ในโหมดผู้เยี่ยมชม (Read-only)');
-                            } else {
-                                showModal('ไม่พบข้อมูล', 'ลิงก์แชร์นี้อาจหมดอายุหรือไม่พบในระบบ');
-                            }
-                        } catch (error) {
-                            console.error("Error loading shared data", error);
-                            showModal('เกิดข้อผิดพลาด', 'ไม่สามารถโหลดข้อมูลที่แชร์ได้: ' + error.message);
-                        }
-                    } else {
-                        fetchAllHistory();
-                    }
-                };
-                loadSharedData();
-            }, []);
-
-            const showModal = (title, message) => {
-                setModalConfig({ isOpen: true, title, message });
-            };
-
-            const closeModal = () => {
-                setModalConfig({ isOpen: false, title: '', message: '' });
-            };
-
             const showConfirm = (title, message, onConfirm) => {
                 setConfirmModal({ isOpen: true, title, message, onConfirm });
             };
-
             const closeConfirm = () => {
                 setConfirmModal({ isOpen: false, title: '', message: '', onConfirm: null });
             };
 
-            const handleAddValue = (fieldId) => {
-                if (isSharedView) return;
-                const currentValues = formData[fieldId] || [''];
-                setFormData({ ...formData, [fieldId]: [...currentValues, ''] });
-            };
-
-            const handleRemoveValue = (fieldId, indexToRemove) => {
-                if (isSharedView) return;
-                const currentValues = formData[fieldId] || [];
-                const newValues = currentValues.filter((_, idx) => idx !== indexToRemove);
-                setFormData({ ...formData, [fieldId]: newValues });
-            };
-
-            const handleChangeValue = (fieldId, index, newValue) => {
-                if (isSharedView) return;
-                const currentValues = formData[fieldId] || [''];
-                const updatedValues = [...currentValues];
-                updatedValues[index] = newValue;
-                setFormData({ ...formData, [fieldId]: updatedValues });
-            };
-
-            const handleCustomFieldInputChange = (catId, value) => {
-                if (isSharedView) return;
-                setCustomFieldInputs({ ...customFieldInputs, [catId]: value });
-            };
-
-            const handleAddCustomField = (catId) => {
-                if (isSharedView) return;
-                const newLabel = customFieldInputs[catId];
-                if (!newLabel || newLabel.trim() === '') return;
-
-                const newFieldId = `custom_${catId}_${Date.now()}`;
-                const updatedCategories = categories.map(cat => {
-                    if (cat.id === catId) {
-                        return {
-                            ...cat,
-                            fields: [...cat.fields, { id: newFieldId, label: newLabel.trim() }]
-                        };
-                    }
-                    return cat;
-                });
-
-                setCategories(updatedCategories);
-                setFormData({ ...formData, [newFieldId]: [''] });
-                setCustomFieldInputs({ ...customFieldInputs, [catId]: '' });
-            };
-
-            const loadDemoData = () => {
-                if (isSharedView) return;
-                setCurrentCaseId(null);
-                setTargetName('นาย สมมติ หลบหนี');
-                setCaseNumber('จ.123/2569');
-                setOfficerName('พ.ต.ต. ยอดเยี่ยม นักสืบ');
-                setFormData({
-                    '1_1': ['นาย สมมติ หลบหนี'],
-                    '1_3': ['1-1001-98765-43-2'],
-                    '1_7': ['123 ม.4 ต.บางกระสอ อ.เมือง จ.นนทบุรี'],
-                    '2_1': ['นาย บิดา หลบหนี (บิดา)'],
-                    '2_2': ['นาง ภรรยา หลบหนี'],
-                    '2_3': ['ด.ช. ลูกชาย หลบหนี', 'ด.ญ. ลูกสาว หลบหนี'],
-                    '9_3': ['081-234-5678 (AIS)', '089-987-6543 (TRUE)'],
-                    '12_1': ['Sommot.Runaway'],
-                    '6_1': ['กค 1234 กทม (Honda Civic สีดำ)']
-                });
-                showModal('สถานะระบบ', 'โหลดข้อมูลจำลองสำเร็จ');
-            };
-
-            const handleSearchDatabase = async (e) => {
-                e.preventDefault();
-                if (!searchQuery.trim()) {
-                    showModal('แจ้งเตือน', 'กรุณากรอกชื่อ เลขคดี ผู้รับผิดชอบ หรือเลขบัตรประชาชนสำหรับค้นหา');
-                    return;
-                }
-
-                setIsSearching(true);
+            const fetchAllHistory = async () => {
                 try {
-                    let source = window.getLocalCases();
                     const fb = await window.initFirebase();
-
                     if (fb) {
                         const casesRef = fb.collection(fb.db, 'artifacts', fb.appId, 'public', 'data', 'cases');
                         const snapshot = await fb.getDocs(casesRef);
-                        source = [];
-                        snapshot.forEach(docSnap => source.push({ id: docSnap.id, ...docSnap.data(), storage: 'firebase' }));
+                        let list = [];
+                        snapshot.forEach(docSnap => {
+                            list.push({ id: docSnap.id, ...docSnap.data() });
+                        });
+                        setAllCasesHistory(list.sort((a,b) => new Date(b.updatedAt) - new Date(a.updatedAt)));
+                    } else {
+                        setAllCasesHistory(mockOnlineDB);
                     }
-
-                    const queryStr = searchQuery.toLowerCase().trim();
-                    const results = source.filter(data => {
-                        const tName = (data.targetName || '').toLowerCase();
-                        const cNum = (data.caseNumber || '').toLowerCase();
-                        const oName = (data.officerName || '').toLowerCase();
-                        const idCard = ((data.formData && data.formData['1_3']) || []).join(' ').toLowerCase();
-                        return tName.includes(queryStr) || cNum.includes(queryStr) || oName.includes(queryStr) || idCard.includes(queryStr);
-                    });
-
-                    setSearchResults(results);
-                    if (results.length === 0) {
-                        showModal('ไม่พบผลการค้นหา', `ไม่พบประวัติเป้าหมายที่ตรงกับ "${searchQuery}"`);
-                    }
-                } catch (error) {
-                    console.error('Search error:', error);
-                    showModal('เกิดข้อผิดพลาด', 'ไม่สามารถค้นหาข้อมูลได้: ' + error.message);
+                } catch (e) {
+                    console.error("Error fetching history", e);
                 }
-                setIsSearching(false);
             };
 
-            const handleLoadCaseFromHistory = (caseData, tab = 'checklist') => {
-                setCurrentCaseId(caseData.id || null);
-                setTargetName(caseData.targetName || '');
-                setCaseNumber(caseData.caseNumber || '');
-                setOfficerName(caseData.officerName || '');
-                setFormData(caseData.formData || {});
-                if (caseData.categories) setCategories(caseData.categories);
-                setActiveTab(tab);
-                showModal('โหลดข้อมูลสำเร็จ', `ดึงข้อมูลของ "${caseData.targetName || 'ไม่ระบุชื่อ'}" มาแสดงเรียบร้อยแล้ว`);
-            };
+            React.useEffect(() => {
+                if (activeTab === 'history') {
+                    fetchAllHistory();
+                }
+            }, [activeTab]);
 
-            // ฟังก์ชันขอยืนยันก่อนแก้ไขข้อมูลจากประวัติ
-            const requestEditCase = (caseData) => {
-                showConfirm(
-                    'ยืนยันการแก้ไขข้อมูล',
-                    `คุณต้องการโหลดและแก้ไขข้อมูลของ "${caseData.targetName || 'ไม่ระบุชื่อ'}" (เลขคดี: ${caseData.caseNumber || '-'}) ใช่หรือไม่?`,
-                    () => {
-                        handleLoadCaseFromHistory(caseData);
-                        closeConfirm();
+            const handleSaveOnline = async () => {
+                if (!targetInfo.caseNo || !targetInfo.targetName) {
+                    showModal('แจ้งเตือน', 'กรุณากรอกเลขคดีและชื่อเป้าหมายก่อนบันทึกข้อมูล');
+                    return;
+                }
+
+                showModal('กำลังดำเนินการ', 'กำลังบันทึกข้อมูลขึ้นระบบออนไลน์...');
+                
+                const caseData = {
+                    targetInfo,
+                    categories,
+                    checklistData,
+                    updatedAt: new Date().toISOString()
+                };
+
+                try {
+                    const fb = await window.initFirebase();
+                    if (fb) {
+                        if (currentCaseId) {
+                            const docRef = fb.doc(fb.db, 'artifacts', fb.appId, 'public', 'data', 'cases', currentCaseId);
+                            await fb.setDoc(docRef, caseData, { merge: true });
+                        } else {
+                            const colRef = fb.collection(fb.db, 'artifacts', fb.appId, 'public', 'data', 'cases');
+                            const docRef = await fb.addDoc(colRef, caseData);
+                            setCurrentCaseId(docRef.id);
+                        }
+                    } else {
+                        if (currentCaseId) {
+                            const idx = mockOnlineDB.findIndex(m => m.id === currentCaseId);
+                            if(idx > -1) mockOnlineDB[idx] = { ...caseData, id: currentCaseId };
+                        } else {
+                            const newId = 'case_' + Date.now();
+                            mockOnlineDB.push({ ...caseData, id: newId });
+                            setCurrentCaseId(newId);
+                        }
                     }
-                );
+                    showModal('บันทึกสำเร็จ', 'ข้อมูลถูกบันทึกและแชร์เข้าสู่ระบบออนไลน์เรียบร้อยแล้ว ผู้ใช้อื่นสามารถตรวจสอบได้ในหน้าประวัติ');
+                } catch (error) {
+                    showModal('เกิดข้อผิดพลาด', 'ไม่สามารถบันทึกข้อมูลออนไลน์ได้: ' + error.message);
+                }
             };
 
-            // ฟังก์ชันขอยืนยันก่อนลบข้อมูลจากฐานข้อมูลออนไลน์
             const requestDeleteCase = (caseId, targetNameLabel) => {
                 showConfirm(
                     '⚠️ ยืนยันการลบข้อมูล',
-                    `คุณต้องการลบประวัติของ "${targetNameLabel || 'ไม่ระบุชื่อ'}" ออกจากระบบถาวร ใช่หรือไม่?\nการกระทำนี้ไม่สามารถย้อนกลับได้`,
+                    `คุณต้องการลบประวัติของ "${targetNameLabel || 'ไม่ระบุชื่อ'}" ออกจากระบบออนไลน์ถาวร ใช่หรือไม่?\n\n*หมายเหตุ: เมื่อลบแล้ว ผู้ใช้อื่นจะไม่เห็นข้อมูลนี้อีกต่อไป`,
                     async () => {
                         closeConfirm();
                         try {
-                            // ลบจากเครื่องเสมอ
-                            window.deleteLocalCase(caseId);
-
-                            // ถ้าเป็นข้อมูล Firebase ให้ลบจากออนไลน์ด้วย
                             const fb = await window.initFirebase();
-                            if (fb && !String(caseId).startsWith('local_')) {
+                            if (fb) {
                                 const docRef = fb.doc(fb.db, 'artifacts', fb.appId, 'public', 'data', 'cases', caseId);
                                 await fb.deleteDoc(docRef);
+                            } else {
+                                mockOnlineDB = mockOnlineDB.filter(m => m.id !== caseId);
                             }
-
-                            setAllCasesHistory(prev => prev.filter(item => item.id !== caseId));
-                            setSearchResults(prev => prev.filter(item => item.id !== caseId));
+                            
                             if (currentCaseId === caseId) {
                                 setCurrentCaseId(null);
+                                setTargetInfo({ caseNo: '', targetName: '', officerName: '' });
+                                setChecklistData({});
                             }
-                            showModal('ลบข้อมูลสำเร็จ', 'ลบประวัติเป้าหมายออกจากระบบเรียบร้อยแล้ว');
+                            showModal('ลบข้อมูลสำเร็จ', 'ข้อมูลถูกลบออกจากระบบส่วนกลางเรียบร้อยแล้ว');
+                            fetchAllHistory();
                         } catch (error) {
-                            console.error('Delete error:', error);
                             showModal('เกิดข้อผิดพลาด', 'ไม่สามารถลบข้อมูลได้: ' + error.message);
                         }
                     }
                 );
             };
 
-            const handleShareOnline = async () => {
-                if (isSharedView) return;
-                setIsSharing(true);
-                try {
-                    const fb = await window.initFirebase();
-                    if (!fb) {
-                        showModal('ยังไม่สามารถแชร์ออนไลน์ได้', 'ระบบสามารถบันทึกข้อมูลในเครื่องได้แล้ว แต่การแชร์ออนไลน์ต้องตั้งค่า Firebase ก่อน');
-                        setIsSharing(false);
-                        return;
-                    }
-
-                    const casesRef = fb.collection(fb.db, 'artifacts', fb.appId, 'public', 'data', 'cases');
-                    const payload = { targetName, caseNumber, officerName, formData, categories, updatedAt: Date.now() };
-                    let targetDocRef;
-
-                    if (currentCaseId && !String(currentCaseId).startsWith('local_')) {
-                        targetDocRef = fb.doc(fb.db, 'artifacts', fb.appId, 'public', 'data', 'cases', currentCaseId);
-                        await fb.setDoc(targetDocRef, payload, { merge: true });
-                    } else {
-                        payload.createdAt = Date.now();
-                        targetDocRef = await fb.addDoc(casesRef, payload);
-                        setCurrentCaseId(targetDocRef.id);
-                    }
-
-                    const baseUrl = window.location.origin + window.location.pathname;
-                    const shareUrl = `${baseUrl}?caseId=${targetDocRef.id}`;
-                    try { await navigator.clipboard.writeText(shareUrl); } catch (_) {
-                        const textArea = document.createElement('textarea');
-                        textArea.value = shareUrl;
-                        document.body.appendChild(textArea);
-                        textArea.select();
-                        document.execCommand('copy');
-                        textArea.remove();
-                    }
-                    await fetchAllHistory();
-                    showModal('แชร์ข้อมูลออนไลน์สำเร็จ!', `คัดลอกลิงก์สำหรับแชร์แล้ว\n\n${shareUrl}`);
-                } catch (error) {
-                    console.error('Share error:', error);
-                    showModal('เกิดข้อผิดพลาด', `ไม่สามารถแชร์ได้: ${error.message}`);
-                } finally {
-                    setIsSharing(false);
-                }
+            // ดู Dashboard อย่างเดียว
+            const loadCaseForDashboard = (item) => {
+                setTargetInfo(item.targetInfo);
+                setChecklistData(item.checklistData || {});
+                if(item.categories) setCategories(item.categories);
+                setCurrentCaseId(item.id);
+                setIsReadOnly(true);
+                setActiveTab('dashboard');
             };
 
-            const handleSave = async () => {
-                if (isSharedView) return;
+            // ดู Mind Map อย่างเดียว
+            const loadCaseForMindMap = (item) => {
+                setTargetInfo(item.targetInfo);
+                setChecklistData(item.checklistData || {});
+                if(item.categories) setCategories(item.categories);
+                setCurrentCaseId(item.id);
+                setIsReadOnly(true);
+                setActiveTab('mindmap');
+            };
 
-                if (!targetName.trim() && !caseNumber.trim()) {
-                    showModal('กรุณาระบุข้อมูล', 'กรุณากรอกอย่างน้อย "ชื่อ-สกุล เป้าหมาย" หรือ "เลขคดี / หมายจับ" ก่อนบันทึก');
-                    return;
+            // โหลดข้อมูลเพื่อแก้ไข
+            const loadCaseForEdit = (item) => {
+                setTargetInfo(item.targetInfo);
+                setChecklistData(item.checklistData || {});
+                if(item.categories) setCategories(item.categories);
+                setCurrentCaseId(item.id);
+                setIsReadOnly(false);
+                setActiveTab('checklist');
+            };
+
+            const handleTargetInfoChange = (e) => {
+                setTargetInfo({ ...targetInfo, [e.target.name]: e.target.value });
+            };
+
+            const handleChecklistChange = (fieldId, index, value) => {
+                const newData = { ...checklistData };
+                if (!newData[fieldId]) {
+                    newData[fieldId] = [];
                 }
+                newData[fieldId][index] = value;
+                setChecklistData(newData);
+            };
 
-                setIsSaving(true);
-                try {
-                    const now = Date.now();
-                    const localId = currentCaseId || ('local_' + now + '_' + Math.random().toString(36).slice(2, 8));
-                    const payload = {
-                        targetName: targetName.trim(),
-                        caseNumber: caseNumber.trim(),
-                        officerName: officerName.trim(),
-                        formData,
-                        categories,
-                        updatedAt: now
-                    };
+            const addFieldItem = (fieldId) => {
+                const newData = { ...checklistData };
+                if (!newData[fieldId]) {
+                    newData[fieldId] = [''];
+                }
+                newData[fieldId].push('');
+                setChecklistData(newData);
+            };
 
-                    // 1) บันทึกในเครื่องก่อน เพื่อไม่ให้ข้อมูลหายแม้ไม่มี Firebase
-                    const localSaved = window.saveLocalCase(payload, localId);
-                    setCurrentCaseId(currentCaseId || localSaved.id);
+            const removeFieldItem = (fieldId, index) => {
+                const newData = { ...checklistData };
+                newData[fieldId].splice(index, 1);
+                if (newData[fieldId].length === 0) {
+                    delete newData[fieldId];
+                }
+                setChecklistData(newData);
+            };
 
-                    // 2) ถ้ามี Firebase ให้บันทึกออนไลน์เพิ่มเติม
-                    const fb = await window.initFirebase();
-                    let onlineSaved = false;
-                    if (fb) {
-                        const casesRef = fb.collection(fb.db, 'artifacts', fb.appId, 'public', 'data', 'cases');
-                        if (currentCaseId && !String(currentCaseId).startsWith('local_')) {
-                            const docRef = fb.doc(fb.db, 'artifacts', fb.appId, 'public', 'data', 'cases', currentCaseId);
-                            await fb.setDoc(docRef, payload, { merge: true });
-                            onlineSaved = true;
-                        } else {
-                            const docRef = await fb.addDoc(casesRef, { ...payload, createdAt: now });
-                            setCurrentCaseId(docRef.id);
-                            onlineSaved = true;
+            const addNewCustomField = (categoryId) => {
+                const fieldName = prompt("กรุณาระบุชื่อข้อมูลที่ต้องการเพิ่ม:");
+                if (fieldName && fieldName.trim() !== "") {
+                    const newCategories = categories.map(cat => {
+                        if (cat.id === categoryId) {
+                            return { ...cat, fields: [...cat.fields, fieldName.trim()] };
                         }
-                    }
-
-                    // 3) อัปเดตประวัติบนหน้าจอทันที
-                    if (onlineSaved) {
-                        await fetchAllHistory();
-                    } else {
-                        setAllCasesHistory(prev => {
-                            const exists = prev.some(item => item.id === localSaved.id);
-                            const next = exists ? prev.map(item => item.id === localSaved.id ? localSaved : item) : [localSaved, ...prev];
-                            return next.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-                        });
-                    }
-
-                    setIsSaving(false);
-                    showModal('บันทึกสำเร็จ', onlineSaved
-                        ? 'บันทึกข้อมูล Checklist ลงฐานข้อมูลออนไลน์แล้ว และข้อมูลจะแสดงในประวัติทันที'
-                        : 'บันทึกข้อมูล Checklist ลงในเครื่องแล้ว ข้อมูลจะแสดงในประวัติทันที');
-                } catch (error) {
-                    console.error('Save error:', error);
-                    setIsSaving(false);
-                    showModal('เกิดข้อผิดพลาด', 'ไม่สามารถบันทึกข้อมูลได้: ' + error.message);
+                        return cat;
+                    });
+                    setCategories(newCategories);
                 }
             };
 
-            const exportMindMapPDF = async () => {
-                const element = document.getElementById('mindmap-export-container');
-                const graphContainer = document.getElementById('network-container');
+            const drawGraph = () => {
+                const container = document.getElementById('network-canvas');
+                if (!container) return;
 
-                if (!element || !graphContainer) {
-                    showModal('แจ้งเตือน', 'ไม่พบพื้นที่ Mind Map สำหรับส่งออก');
-                    return;
-                }
+                let nodes = [];
+                let edges = [];
 
-                // ตรวจสอบว่ามีข้อมูลจริงก่อนส่งออก
-                const filledCount = Object.values(formData || {})
-                    .flat()
-                    .filter(v => v !== null && v !== undefined && String(v).trim() !== '').length;
+                nodes.push({
+                    id: 'TARGET',
+                    label: targetInfo.targetName || 'เป้าหมาย',
+                    shape: 'dot',
+                    size: 30,
+                    color: { background: '#ef4444', border: '#b91c1c' },
+                    font: { size: 16, color: '#000000', bold: true },
+                    shadow: true
+                });
 
-                if (filledCount === 0) {
-                    showModal('แจ้งเตือน', 'ยังไม่มีข้อมูลใน Mind Map กรุณากรอกข้อมูลใน Checklist ก่อนส่งออก');
-                    return;
-                }
-
-                try {
-                    // ให้ vis-network จัดตำแหน่ง Node ทั้งหมดให้อยู่ในกรอบก่อนจับภาพ
-                    if (window.currentMindMapNetwork) {
-                        try {
-                            window.currentMindMapNetwork.fit({
-                                animation: false
+                categories.forEach(cat => {
+                    let hasData = false;
+                    const catNodeId = `CAT_${cat.id}`;
+                    
+                    cat.fields.forEach(field => {
+                        const fieldValues = checklistData[`${cat.id}_${field}`];
+                        if (fieldValues && Array.isArray(fieldValues)) {
+                            fieldValues.forEach((val, index) => {
+                                if (val && String(val).trim() !== '') {
+                                    if (!hasData) {
+                                        nodes.push({ id: catNodeId, label: cat.name, shape: 'box', color: '#60a5fa', font: { color: '#ffffff' } });
+                                        edges.push({ from: 'TARGET', to: catNodeId, color: '#9ca3af' });
+                                        hasData = true;
+                                    }
+                                    
+                                    const valNodeId = `VAL_${cat.id}_${field}_${index}`;
+                                    nodes.push({ id: valNodeId, label: `${field}:\n${val}`, shape: 'box', color: '#f3f4f6', font: { size: 12 } });
+                                    edges.push({ from: catNodeId, to: valNodeId, color: '#d1d5db' });
+                                }
                             });
-                            window.currentMindMapNetwork.redraw();
-                        } catch (e) {
-                            console.warn('Network fit error:', e);
                         }
-                    }
+                    });
+                });
 
-                    // รอให้ Canvas วาดข้อมูลล่าสุดเสร็จ
-                    await new Promise(resolve => setTimeout(resolve, 700));
-
-                    const canvas = graphContainer.querySelector('canvas');
-                    if (!canvas) {
-                        showModal('แจ้งเตือน', 'ไม่พบข้อมูลกราฟ กรุณาเปิดหน้า Mind Map อีกครั้ง');
-                        return;
-                    }
-
-                    // สร้าง Canvas ใหม่เพื่อบังคับพื้นหลังสีขาว
-                    // และคงข้อความ/Node ที่ vis-network วาดไว้ทั้งหมด
-                    const exportScale = 2;
-                    const tempCanvas = document.createElement('canvas');
-                    tempCanvas.width = canvas.width * exportScale;
-                    tempCanvas.height = canvas.height * exportScale;
-
-                    const ctx = tempCanvas.getContext('2d');
-                    ctx.fillStyle = '#ffffff';
-                    ctx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-                    ctx.imageSmoothingEnabled = true;
-                    ctx.drawImage(
-                        canvas,
-                        0, 0, canvas.width, canvas.height,
-                        0, 0, tempCanvas.width, tempCanvas.height
-                    );
-
-                    const imgData = tempCanvas.toDataURL('image/jpeg', 0.98);
-
-                    // สร้างพื้นที่สำหรับ PDF โดยไม่ใช้ Canvas ของ vis-network โดยตรง
-                    const pdfWrapper = document.createElement('div');
-                    pdfWrapper.id = 'mindmap-pdf-temp-wrapper';
-                    pdfWrapper.style.background = '#ffffff';
-                    pdfWrapper.style.width = '100%';
-                    pdfWrapper.style.padding = '12px';
-                    pdfWrapper.style.boxSizing = 'border-box';
-                    pdfWrapper.style.fontFamily = 'Sarabun, sans-serif';
-
-                    const title = document.createElement('div');
-                    title.style.textAlign = 'center';
-                    title.style.marginBottom = '10px';
-
-                    const h = document.createElement('h2');
-                    h.textContent = `ผังความเชื่อมโยง (Mind Map) - ${targetName || 'ไม่ระบุเป้าหมาย'}`;
-                    h.style.margin = '0 0 6px 0';
-                    h.style.fontSize = '22px';
-                    h.style.fontWeight = '700';
-                    h.style.color = '#111827';
-
-                    const info = document.createElement('div');
-                    info.textContent = `เลขคดี: ${caseNumber || '-'}  |  ผู้รับผิดชอบ: ${officerName || '-'}  |  จำนวนข้อมูล: ${filledCount} รายการ`;
-                    info.style.fontSize = '13px';
-                    info.style.color = '#4b5563';
-
-                    title.appendChild(h);
-                    title.appendChild(info);
-
-                    const img = document.createElement('img');
-                    img.src = imgData;
-                    img.style.display = 'block';
-                    img.style.width = '100%';
-                    img.style.height = 'auto';
-                    img.style.border = '1px solid #d1d5db';
-                    img.style.boxSizing = 'border-box';
-
-                    pdfWrapper.appendChild(title);
-                    pdfWrapper.appendChild(img);
-
-                    document.body.appendChild(pdfWrapper);
-
-                    const safeName = (targetName || 'Target')
-                        .replace(/[\\/:*?"<>|]/g, '_')
-                        .trim();
-
-                    const opt = {
-                        margin: 6,
-                        filename: `MindMap_${safeName || 'Target'}.pdf`,
-                        image: { type: 'jpeg', quality: 0.98 },
-                        html2canvas: {
-                            scale: 2,
-                            useCORS: true,
-                            backgroundColor: '#ffffff',
-                            logging: false
-                        },
-                        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
-                        jsPDF: {
-                            unit: 'mm',
-                            format: 'a4',
-                            orientation: 'landscape',
-                            compress: true
-                        }
-                    };
-
-                    await html2pdf().set(opt).from(pdfWrapper).save();
-
-                    pdfWrapper.remove();
-
-                    showModal(
-                        'ส่งออก PDF สำเร็จ',
-                        `สร้างไฟล์ Mind Map ของ "${targetName || 'ไม่ระบุเป้าหมาย'}" เรียบร้อยแล้ว\\nข้อมูลที่นำไปแสดงใน Node: ${filledCount} รายการ`
-                    );
-
-                } catch (err) {
-                    const temp = document.getElementById('mindmap-pdf-temp-wrapper');
-                    if (temp) temp.remove();
-
-                    console.error('Mind Map PDF export error:', err);
-                    showModal('ข้อผิดพลาด', 'ไม่สามารถสร้างไฟล์ PDF ได้: ' + (err.message || err));
+                if (nodes.length === 1) {
+                    nodes.push({ id: 'EMPTY', label: 'ยังไม่มีข้อมูลความเชื่อมโยง', shape: 'text', font: { color: '#9ca3af' }});
+                    edges.push({ from: 'TARGET', to: 'EMPTY', dashes: true });
                 }
-            };
 
-            const exportDashboardPDF = () => {
-                const element = document.getElementById('dashboard-export-container');
-                const opt = {
-                    margin: 10,
-                    filename: `Dashboard_${targetName || 'Target'}.pdf`,
-                    image: { type: 'jpeg', quality: 0.98 },
-                    html2canvas: { scale: 2 },
-                    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+                const data = { nodes: new vis.DataSet(nodes), edges: new vis.DataSet(edges) };
+                const options = {
+                    physics: { barnesHut: { gravitationalConstant: -3000, centralGravity: 0.3, springLength: 100 } },
+                    layout: { improvedLayout: true }
                 };
-                html2pdf().set(opt).from(element).save();
+
+                new vis.Network(container, data, options);
             };
 
             React.useEffect(() => {
                 if (activeTab === 'mindmap') {
-                    const container = document.getElementById('network-container');
-                    if (!container) return;
-
-                    let nodesArray = [
-                        { id: 'center', label: targetName || 'เป้าหมาย\n(ไม่ระบุชื่อ)', shape: 'dot', size: 25, color: { background: '#ef4444', border: '#b91c1c' }, font: { color: '#ffffff', size: 16, bold: true }, shadow: true }
-                    ];
-                    let edgesArray = [];
-
-                    categories.forEach(cat => {
-                        let hasData = false;
-                        cat.fields.forEach(field => {
-                            const values = (formData[field.id] || []).filter(val => val && String(val).trim() !== '');
-                            if (values.length > 0) {
-                                hasData = true;
-                                values.forEach((val, idx) => {
-                                    const nodeId = `val_${field.id}_${idx}`;
-                                    nodesArray.push({
-                                        id: nodeId,
-                                        label: `${field.label}:\n${val}`,
-                                        shape: 'box',
-                                        color: { background: '#eff6ff', border: '#bfdbfe' },
-                                        font: { size: 12 }
-                                    });
-                                    edgesArray.push({ from: cat.id, to: nodeId, color: { color: '#94a3b8' } });
-                                });
-                            }
-                        });
-
-                        if (hasData) {
-                            nodesArray.push({ id: cat.id, label: cat.title, shape: 'box', color: { background: '#fef08a', border: '#facc15' }, font: { bold: true } });
-                            edgesArray.push({ from: 'center', to: cat.id, width: 2, color: { color: '#64748b' } });
-                        }
-                    });
-
-                    const data = { nodes: new vis.DataSet(nodesArray), edges: new vis.DataSet(edgesArray) };
-                    const options = { layout: { improvedLayout: true }, physics: { stabilization: false, barnesHut: { springLength: 150 } } };
-                    window.currentMindMapNetwork = new vis.Network(container, data, options);
+                    setTimeout(() => drawGraph(), 100);
                 }
-            }, [activeTab, formData, categories, targetName]);
+            }, [activeTab, checklistData, targetInfo]);
 
-            const renderChecklist = () => (
-                <div className="space-y-6">
-                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div>
-                                <label className="block text-sm font-semibold text-gray-700 mb-1">ชื่อ-สกุล เป้าหมาย</label>
-                                <input type="text" value={targetName} onChange={e => setTargetName(e.target.value)} disabled={isSharedView} placeholder="ระบุชื่อผู้ต้องหา" className="w-full border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 p-2 disabled:bg-gray-100 disabled:text-gray-500" />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-semibold text-gray-700 mb-1">เลขคดี / หมายจับ</label>
-                                <input type="text" value={caseNumber} onChange={e => setCaseNumber(e.target.value)} disabled={isSharedView} placeholder="ระบุเลขคดี" className="w-full border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 p-2 disabled:bg-gray-100 disabled:text-gray-500" />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-semibold text-gray-700 mb-1">ผู้รับผิดชอบหมายจับ</label>
-                                <input type="text" value={officerName} onChange={e => setOfficerName(e.target.value)} disabled={isSharedView} placeholder="ยศ ชื่อ นามสกุล" className="w-full border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 p-2 disabled:bg-gray-100 disabled:text-gray-500" />
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {categories.map(cat => (
-                            <div key={cat.id} className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 relative">
-                                <h3 className="font-bold text-gray-800 mb-4 pb-2 border-b-2 border-blue-100">{cat.title}</h3>
-                                <div className="space-y-4">
-                                    {cat.fields.map(field => {
-                                        const values = formData[field.id] || [''];
-                                        return (
-                                            <div key={field.id} className="border-l-2 border-blue-200 pl-3">
-                                                <div className="flex justify-between items-center mb-1">
-                                                    <label className="text-xs font-semibold text-gray-600">{field.label}</label>
-                                                    {!isSharedView && (
-                                                        <button onClick={() => handleAddValue(field.id)} className="text-xs text-blue-600 hover:text-blue-800 bg-blue-50 px-2 py-0.5 rounded font-medium">+ เพิ่ม</button>
-                                                    )}
-                                                </div>
-                                                {values.map((val, idx) => (
-                                                    <div key={idx} className="flex items-center gap-2 mb-2">
-                                                        <input type="text" value={val} onChange={(e) => handleChangeValue(field.id, idx, e.target.value)} disabled={isSharedView} className="flex-1 w-full border border-gray-300 rounded p-1.5 text-sm focus:ring-1 focus:ring-blue-500 disabled:bg-gray-50" placeholder={`ระบุข้อมูล...`} />
-                                                        {!isSharedView && values.length > 1 && (
-                                                            <button onClick={() => handleRemoveValue(field.id, idx)} className="text-red-500 hover:bg-red-50 rounded px-2 font-bold text-lg" title="ลบข้อมูลนี้">−</button>
-                                                        )}
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        );
-                                    })}
-                                    
-                                    {!isSharedView && (
-                                        <div className="mt-6 pt-4 border-t border-dashed border-gray-300">
-                                            <div className="flex flex-col gap-2">
-                                                <label className="text-xs font-semibold text-gray-500">เพิ่มข้อมูลอื่น (ผู้ใช้ระบุเอง):</label>
-                                                <div className="flex gap-2">
-                                                    <input type="text" value={customFieldInputs[cat.id] || ''} onChange={(e) => handleCustomFieldInputChange(cat.id, e.target.value)} placeholder="ชื่อหัวข้อใหม่..." className="flex-1 border border-gray-300 rounded p-1.5 text-sm bg-gray-50 focus:bg-white focus:ring-1 focus:ring-green-500" />
-                                                    <button onClick={() => handleAddCustomField(cat.id)} className="bg-green-50 text-green-700 px-3 py-1.5 rounded text-sm font-semibold hover:bg-green-100 border border-green-200 border-dashed">
-                                                        + บันทึก
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-
-                    {!isSharedView && (
-                        <div className="flex justify-center pt-6 pb-12">
-                            <button onClick={handleSave} disabled={isSaving} className={`px-8 py-3 rounded-full font-bold text-white shadow-lg transition-all ${isSaving ? 'bg-gray-400 cursor-wait' : 'bg-blue-600 hover:bg-blue-700 hover:shadow-xl'}`}>
-                                {isSaving ? 'กำลังบันทึกข้อมูล...' : '💾 บันทึกข้อมูล Checklist'}
-                            </button>
-                        </div>
-                    )}
-                </div>
-            );
-
-            const renderMindMap = () => (
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                    <div className="flex flex-col sm:flex-row justify-between items-center mb-4 gap-4">
-                        <h2 className="text-xl font-bold text-gray-800">แผนผังความเชื่อมโยง (Mind Map)</h2>
-                        <div className="flex gap-2">
-                            <button onClick={handleShareOnline} disabled={isSharing} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm font-semibold shadow-sm flex items-center gap-2">
-                                <span>{isSharing ? 'กำลังสร้างลิงก์...' : '🔗 แชร์ออนไลน์'}</span>
-                            </button>
-                            <button onClick={exportMindMapPDF} className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 text-sm font-semibold shadow-sm flex items-center gap-2">
-                                <span>📄 ส่งออกเป็น PDF</span>
-                            </button>
-                        </div>
-                    </div>
-                    <div id="mindmap-export-container" className="p-4 bg-white">
-                        <div className="mb-4 text-center">
-                            <h3 className="text-2xl font-bold text-gray-800">{targetName || "ชื่อเป้าหมาย"}</h3>
-                            <p className="text-gray-600">เลขคดี: {caseNumber || "-"} | ผู้รับผิดชอบ: {officerName || "-"}</p>
-                        </div>
-                        <div id="network-container"></div>
-                    </div>
-                </div>
-            );
-
-            const renderDashboard = () => {
-                let totalItems = 0;
-                let filledItems = 0;
-                let activeCategories = 0;
-
-                categories.forEach(cat => {
-                    let hasDataInCat = false;
-                    cat.fields.forEach(field => {
-                        totalItems++;
-                        const values = (formData[field.id] || []).filter(v => v && String(v).trim() !== '');
-                        if (values.length > 0) {
-                            filledItems++;
-                            hasDataInCat = true;
-                        }
+            const exportPDF = (elementId, filename) => {
+                const element = document.getElementById(elementId);
+                const opt = {
+                    margin: 0.5,
+                    filename: `${filename}_${targetInfo.caseNo || 'draft'}.pdf`,
+                    image: { type: 'jpeg', quality: 0.98 },
+                    html2canvas: { scale: 2, useCORS: true },
+                    jsPDF: { unit: 'in', format: 'a4', orientation: 'landscape' }
+                };
+                
+                showModal('กำลังประมวลผล', 'กำลังสร้างไฟล์ PDF กรุณารอสักครู่...');
+                
+                setTimeout(() => {
+                    html2pdf().set(opt).from(element).save().then(() => {
+                        closeModal();
                     });
-                    if (hasDataInCat) activeCategories++;
-                });
-
-                const progress = totalItems === 0 ? 0 : Math.round((filledItems / totalItems) * 100);
-
-                return (
-                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                        <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
-                            <h2 className="text-xl font-bold text-gray-800">สรุปข้อมูล (Dashboard)</h2>
-                            <div className="flex gap-2">
-                                <button onClick={handleShareOnline} disabled={isSharing} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm font-semibold shadow-sm flex items-center gap-2">
-                                    <span>{isSharing ? 'กำลังสร้างลิงก์...' : '🔗 แชร์ออนไลน์'}</span>
-                                </button>
-                                <button onClick={exportDashboardPDF} className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 text-sm font-semibold shadow-sm flex items-center gap-2">
-                                    <span>📄 ส่งออกรายงาน PDF</span>
-                                </button>
-                            </div>
-                        </div>
-                        
-                        <div id="dashboard-export-container" className="p-4 bg-white">
-                            <div className="mb-6 text-center border-b pb-4">
-                                <h3 className="text-2xl font-bold text-gray-800">รายงานผลการสืบสวน: {targetName || "ไม่ระบุเป้าหมาย"}</h3>
-                                <p className="text-gray-600">เลขคดี: {caseNumber || "-"} | ผู้รับผิดชอบ: {officerName || "-"}</p>
-                            </div>
-
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-                                <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 text-center">
-                                    <p className="text-blue-600 font-semibold mb-1">ความคืบหน้าข้อมูล</p>
-                                    <p className="text-3xl font-bold text-blue-800">{progress}%</p>
-                                </div>
-                                <div className="bg-green-50 p-4 rounded-xl border border-green-100 text-center">
-                                    <p className="text-green-600 font-semibold mb-1">ข้อมูลที่ได้ (หัวข้อ)</p>
-                                    <p className="text-3xl font-bold text-green-800">{filledItems} / {totalItems}</p>
-                                </div>
-                                <div className="bg-purple-50 p-4 rounded-xl border border-purple-100 text-center">
-                                    <p className="text-purple-600 font-semibold mb-1">หมวดหมู่ที่มีข้อมูล</p>
-                                    <p className="text-3xl font-bold text-purple-800">{activeCategories} / {categories.length}</p>
-                                </div>
-                            </div>
-
-                            <h3 className="font-bold text-lg mb-4 text-gray-800">รายละเอียดข้อมูลที่พบ</h3>
-                            <div className="space-y-4">
-                                {categories.map(cat => {
-                                    const filledFields = cat.fields.filter(field => {
-                                        const values = (formData[field.id] || []).filter(v => v && String(v).trim() !== '');
-                                        return values.length > 0;
-                                    });
-
-                                    if (filledFields.length === 0) return null;
-
-                                    return (
-                                        <div key={cat.id} className="border rounded-lg p-4 bg-gray-50">
-                                            <h4 className="font-bold text-gray-700 mb-2">{cat.title}</h4>
-                                            <ul className="list-disc list-inside text-sm text-gray-600 space-y-1 ml-2">
-                                                {filledFields.map(field => {
-                                                    const values = (formData[field.id] || []).filter(v => v && String(v).trim() !== '');
-                                                    return (
-                                                        <li key={field.id}>
-                                                            <span className="font-semibold">{field.label}:</span> {values.join(', ')}
-                                                        </li>
-                                                    );
-                                                })}
-                                            </ul>
-                                        </div>
-                                    );
-                                })}
-                                {activeCategories === 0 && (
-                                    <div className="text-center text-gray-500 py-8 italic">ยังไม่มีข้อมูลในระบบ</div>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                );
+                }, 800);
             };
 
-            const renderSearch = () => (
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 space-y-6">
-                    <div>
-                        <h2 className="text-xl font-bold text-gray-800 mb-1">🔍 ค้นหาประวัติ / ตรวจสอบเป้าหมาย</h2>
-                        <p className="text-sm text-gray-500">ค้นหาข้อมูลผู้ต้องหาจากฐานข้อมูลออนไลน์ ด้วยชื่อ-นามสกุล หรือเลขประจำตัวประชาชน</p>
-                    </div>
-
-                    <form onSubmit={handleSearchDatabase} className="flex flex-col sm:flex-row gap-3">
-                        <input 
-                            type="text" 
-                            value={searchQuery} 
-                            onChange={(e) => setSearchQuery(e.target.value)} 
-                            placeholder="พิมพ์ชื่อ, นามสกุล หรือเลขบัตรประชาชน 13 หลัก..." 
-                            className="flex-1 border border-gray-300 rounded-lg px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                        />
-                        <button 
-                            type="submit" 
-                            disabled={isSearching}
-                            className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6 py-3 rounded-lg shadow-sm transition-colors flex items-center justify-center gap-2"
-                        >
-                            {isSearching ? 'กำลังค้นหา...' : '🔎 ค้นหาข้อมูล'}
-                        </button>
-                    </form>
-
-                    <div className="mt-6 border-t pt-6">
-                        <h3 className="font-bold text-gray-700 mb-4">ผลการค้นหา ({searchResults.length} รายการ)</h3>
-                        {searchResults.length > 0 ? (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {searchResults.map((item, idx) => (
-                                    <div key={idx} className="border border-blue-100 bg-blue-50/50 p-4 rounded-xl flex flex-col justify-between gap-4">
-                                        <div>
-                                            <div className="flex justify-between items-start">
-                                                <h4 className="font-bold text-lg text-gray-900">{item.targetName || 'ไม่ระบุชื่อ'}</h4>
-                                                <span className="bg-blue-100 text-blue-800 text-xs px-2.5 py-1 rounded-full font-semibold">เลขคดี: {item.caseNumber || '-'}</span>
-                                            </div>
-                                            <p className="text-xs text-gray-600 mt-1">ผู้รับผิดชอบ: {item.officerName || '-'}</p>
-                                        </div>
-                                        <div className="flex gap-2 justify-end">
-                                            <button 
-                                                onClick={() => requestEditCase(item)}
-                                                className="bg-yellow-500 hover:bg-yellow-600 text-white text-xs font-semibold py-1.5 px-3 rounded-lg transition-colors shadow-sm"
-                                            >
-                                                ✏️ แก้ไขข้อมูล
-                                            </button>
-                                            <button 
-                                                onClick={() => requestDeleteCase(item.id, item.targetName)}
-                                                className="bg-red-500 hover:bg-red-600 text-white text-xs font-semibold py-1.5 px-3 rounded-lg transition-colors shadow-sm"
-                                            >
-                                                🗑️ ลบข้อมูล
-                                            </button>
-                                            <button 
-                                                onClick={() => handleLoadCaseFromHistory(item)}
-                                                className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold py-1.5 px-3 rounded-lg transition-colors shadow-sm"
-                                            >
-                                                📂 เปิดดู
-                                            </button>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        ) : (
-                            <div className="text-center py-12 text-gray-400 bg-gray-50 rounded-xl border border-dashed border-gray-200">
-                                ยังไม่มีผลการค้นหา หรือกรุณากรอกคำค้นหาด้านบน
-                            </div>
-                        )}
-                    </div>
-                </div>
-            );
-
-            const renderHistory = () => (
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                    <div className="flex justify-between items-center mb-6">
-                        <h2 className="text-xl font-bold text-gray-800">🕒 ประวัติการสร้าง Checklist ทั้งหมดในระบบ</h2>
-                        <div className="flex items-center gap-2">
-                            <span className="text-xs text-gray-500 hidden sm:inline">ข้อมูลจะถูกบันทึกและเรียกกลับมาใช้งานได้</span>
-                            <button onClick={fetchAllHistory} className="bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-semibold py-2 px-3 rounded-lg transition-colors">
-                                🔄 รีเฟรชข้อมูล
-                            </button>
-                        </div>
-                    </div>
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left border-collapse">
-                            <thead>
-                                <tr className="bg-gray-100 text-gray-700">
-                                    <th className="p-3 border-b font-semibold">เลขคดี</th>
-                                    <th className="p-3 border-b font-semibold">ชื่อเป้าหมาย</th>
-                                    <th className="p-3 border-b font-semibold">ผู้รับผิดชอบ</th>
-                                    <th className="p-3 border-b font-semibold">ข้อมูล</th>
-                                    <th className="p-3 border-b font-semibold">สถานะ</th>
-                                    <th className="p-3 border-b font-semibold text-center">การจัดการ</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {allCasesHistory.length > 0 ? (
-                                    allCasesHistory.map((item, idx) => (
-                                        <tr key={idx} className="hover:bg-gray-50 transition-colors">
-                                            <td className="p-3 border-b text-sm font-medium">{item.caseNumber || '-'}</td>
-                                            <td className="p-3 border-b text-sm font-semibold">{item.targetName || 'ไม่ระบุชื่อ'}</td>
-                                            <td className="p-3 border-b text-sm text-gray-600">{Object.values(item.formData || {}).flat().filter(v => v && String(v).trim()).length} รายการ</td>
-                                            <td className="p-3 border-b"><span className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-semibold">บันทึกแล้ว</span></td>
-                                            <td className="p-3 border-b text-center space-x-2">
-                                                <button onClick={() => requestEditCase(item)} className="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1 rounded text-xs font-semibold transition-colors">แก้ไข</button>
-                                                <button onClick={() => requestDeleteCase(item.id, item.targetName)} className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-xs font-semibold transition-colors">ลบ</button>
-                                                <button onClick={() => handleLoadCaseFromHistory(item, 'checklist')} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-xs font-semibold transition-colors">Checklist</button>
-                                                <button onClick={() => handleLoadCaseFromHistory(item, 'mindmap')} className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1 rounded text-xs font-semibold transition-colors">Mind Map</button>
-                                                <button onClick={() => handleLoadCaseFromHistory(item, 'dashboard')} className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded text-xs font-semibold transition-colors">Dashboard</button>
-                                            </td>
-                                        </tr>
-                                    ))
-                                ) : (
-                                    <tr>
-                                        <td colSpan="6" className="text-center py-8 text-gray-400 italic">ยังไม่มีประวัติการบันทึกข้อมูลในระบบออนไลน์</td>
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            );
-
             return (
-                <div className="min-h-screen relative">
-                    {/* Modal แจ้งเตือนทั่วไป */}
-                    {modalConfig.isOpen && (
-                        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                            <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 animate-fade-in-up">
-                                <h3 className="text-xl font-bold text-gray-900 mb-2">{modalConfig.title}</h3>
-                                <p className="text-gray-600 whitespace-pre-line mb-6">{modalConfig.message}</p>
-                                <div className="flex justify-end">
-                                    <button onClick={closeModal} className="bg-blue-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-blue-700">ตกลง</button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Modal ยืนยันการกระทำ (Confirmation Popup) */}
-                    {confirmModal.isOpen && (
-                        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                            <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 animate-fade-in-up border-t-4 border-yellow-500">
-                                <h3 className="text-xl font-bold text-gray-900 mb-2 flex items-center gap-2">
-                                    <span>⚠️</span> {confirmModal.title}
-                                </h3>
-                                <p className="text-gray-600 whitespace-pre-line mb-6">{confirmModal.message}</p>
-                                <div className="flex justify-end gap-3">
-                                    <button onClick={closeConfirm} className="bg-gray-200 text-gray-800 px-4 py-2 rounded-lg font-semibold hover:bg-gray-300 transition-colors">ยกเลิก</button>
-                                    <button onClick={confirmModal.onConfirm} className="bg-red-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-red-700 transition-colors">ยืนยัน</button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    <header className="bg-[#0f172a] text-white shadow-md">
-                        <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-                            <div className="flex items-center gap-4">
-                                <div className="bg-white p-1 rounded-full">
-                                    <img src="https://upload.wikimedia.org/wikipedia/th/thumb/a/a2/Crime_Suppression_Division_th_logo.png/180px-Crime_Suppression_Division_th_logo.png" alt="CSD Logo" className="h-12 w-12 object-contain" />
+                <div className="min-h-screen flex flex-col">
+                    <header className="bg-blue-900 text-white shadow-md">
+                        <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8 flex justify-between items-center">
+                            <div className="flex items-center">
+                                <div className="h-12 w-12 rounded-full bg-white flex items-center justify-center mr-4 border-2 border-yellow-400">
+                                    <i className="fas fa-shield-alt text-blue-900 text-2xl"></i>
                                 </div>
                                 <div>
-                                    <h1 className="text-xl font-bold text-[#facc15]">ระบบบริหารงานสืบสวนคดีอาญา</h1>
-                                    <p className="text-sm text-gray-300">กองกำกับการ 1 กองบังคับการปฏิบัติการพิเศษ (กก.1 บก.ปพ.)</p>
+                                    <h1 className="text-xl font-bold">ระบบบริหารงานสืบสวนคดีอาญา</h1>
+                                    <p className="text-sm text-blue-200">กองกำกับการ 1 กองบังคับการปฏิบัติการพิเศษ (กก.1 บก.ปพ.)</p>
                                 </div>
                             </div>
-                            {!isSharedView && (
-                                <button onClick={loadDemoData} className="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded text-sm font-semibold transition-colors border border-gray-600">
-                                    🔄 โหลดข้อมูลจำลอง
-                                </button>
-                            )}
+                            <div className="text-right">
+                                {isReadOnly && <span className="bg-red-500 text-white px-3 py-1 rounded-full text-xs font-bold mr-2"><i className="fas fa-lock"></i> โหมดอ่านอย่างเดียว</span>}
+                                <span className="text-sm font-medium"><i className="fas fa-user-circle"></i> เจ้าหน้าที่ส่วนกลาง</span>
+                            </div>
                         </div>
                     </header>
 
-                    {isSharedView && (
-                        <div className="bg-blue-100 border-b border-blue-200 text-blue-800 px-4 py-3 text-center font-semibold shadow-sm">
-                            👁️ ขณะนี้คุณกำลังดูข้อมูลในโหมดผู้เยี่ยมชม (Read-Only)
+                    <div className="bg-white border-b border-gray-200 sticky top-0 z-10 shadow-sm">
+                        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                            <nav className="-mb-px flex space-x-8">
+                                <button onClick={() => setActiveTab('checklist')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors duration-200 ${activeTab === 'checklist' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>
+                                    <i className="fas fa-tasks mr-2"></i> Checklist
+                                </button>
+                                <button onClick={() => setActiveTab('mindmap')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors duration-200 ${activeTab === 'mindmap' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>
+                                    <i className="fas fa-project-diagram mr-2"></i> แผนผังความเชื่อมโยง (Mind Map)
+                                </button>
+                                <button onClick={() => setActiveTab('dashboard')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors duration-200 ${activeTab === 'dashboard' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>
+                                    <i className="fas fa-chart-pie mr-2"></i> สรุปข้อมูล (Dashboard)
+                                </button>
+                                <button onClick={() => setActiveTab('history')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors duration-200 ${activeTab === 'history' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>
+                                    <i className="fas fa-history mr-2"></i> ประวัติ Checklist
+                                </button>
+                            </nav>
+                        </div>
+                    </div>
+
+                    <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                        {activeTab !== 'history' && (
+                            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 mb-6">
+                                <h2 className="text-lg font-semibold text-gray-800 mb-4 border-b pb-2">ข้อมูลพื้นฐานเป้าหมาย</h2>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">เลขคดี / หมายจับ</label>
+                                        <input type="text" name="caseNo" value={targetInfo.caseNo} onChange={handleTargetInfoChange} disabled={isReadOnly} className="w-full border-gray-300 rounded-md shadow-sm p-2 border focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100" placeholder="ระบุเลขคดี..." />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">ชื่อ-สกุล เป้าหมาย</label>
+                                        <input type="text" name="targetName" value={targetInfo.targetName} onChange={handleTargetInfoChange} disabled={isReadOnly} className="w-full border-gray-300 rounded-md shadow-sm p-2 border focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100" placeholder="ระบุชื่อเป้าหมาย..." />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">ผู้รับผิดชอบหมายจับ</label>
+                                        <input type="text" name="officerName" value={targetInfo.officerName || ''} onChange={handleTargetInfoChange} disabled={isReadOnly} className="w-full border-gray-300 rounded-md shadow-sm p-2 border focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100" placeholder="ยศ ชื่อ นามสกุล" />
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'checklist' && (
+                            <div className="space-y-6">
+                                <div className="flex justify-between items-center bg-blue-50 p-4 rounded-lg border border-blue-100">
+                                    <p className="text-sm text-blue-800"><i className="fas fa-info-circle mr-2"></i> กรอกข้อมูลที่สืบสวนได้ลงในแบบฟอร์มด้านล่าง คุณสามารถเพิ่มรายการในแต่ละหัวข้อได้หากมีข้อมูลมากกว่า 1 รายการ</p>
+                                    {!isReadOnly && (
+                                        <button onClick={() => {
+                                            const newCatName = prompt("กรุณาระบุชื่อหมวดหมู่ใหม่:");
+                                            if (newCatName) setCategories([...categories, { id: Date.now(), name: newCatName, fields: [] }]);
+                                        }} className="bg-blue-600 text-white px-4 py-2 rounded shadow hover:bg-blue-700 transition text-sm">
+                                            <i className="fas fa-plus"></i> เพิ่มหมวดหมู่ใหม่
+                                        </button>
+                                    )}
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                    {categories.map((category) => (
+                                        <div key={category.id} className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden flex flex-col h-full">
+                                            <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 font-semibold text-gray-800">
+                                                {category.name}
+                                            </div>
+                                            <div className="p-4 space-y-4 flex-1">
+                                                {category.fields.map((field, fieldIdx) => {
+                                                    const fieldId = `${category.id}_${field}`;
+                                                    const values = checklistData[fieldId] || [''];
+                                                    
+                                                    return (
+                                                        <div key={fieldIdx} className="border-b border-gray-100 pb-3 last:border-0">
+                                                            <div className="flex justify-between items-center mb-1">
+                                                                <label className="block text-xs font-medium text-gray-600">{field}</label>
+                                                                {!isReadOnly && (
+                                                                    <button onClick={() => addFieldItem(fieldId)} className="text-xs text-blue-600 hover:text-blue-800"><i className="fas fa-plus"></i> เพิ่ม</button>
+                                                                )}
+                                                            </div>
+                                                            {values.map((val, valIdx) => (
+                                                                <div key={valIdx} className="flex mb-2">
+                                                                    <input type="text" value={val} disabled={isReadOnly} onChange={(e) => handleChecklistChange(fieldId, valIdx, e.target.value)} className="flex-1 text-sm border-gray-300 rounded shadow-sm p-1.5 border focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100" placeholder="ระบุข้อมูล..." />
+                                                                    {values.length > 1 && !isReadOnly && (
+                                                                        <button onClick={() => removeFieldItem(fieldId, valIdx)} className="ml-2 text-red-500 hover:text-red-700 px-1"><i className="fas fa-minus-circle"></i></button>
+                                                                    )}
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    );
+                                                })}
+                                                
+                                                {!isReadOnly && (
+                                                    <button onClick={() => addNewCustomField(category.id)} className="w-full mt-2 py-2 border-2 border-dashed border-green-300 text-green-600 rounded-md text-sm font-medium hover:bg-green-50 transition-colors">
+                                                        <i className="fas fa-plus mr-1"></i> เพิ่มหัวข้ออื่น (ผู้ใช้ระบุเอง)
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                                {!isReadOnly && (
+                                    <div className="mt-8 bg-white p-6 rounded-lg shadow-sm border border-gray-200 text-center">
+                                        <button onClick={handleSaveOnline} className="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-8 rounded-lg shadow-md transition-transform transform hover:scale-105">
+                                            <i className="fas fa-save mr-2"></i> บันทึกข้อมูลเข้าสู่ระบบออนไลน์
+                                        </button>
+                                        <p className="text-xs text-gray-500 mt-2">เมื่อบันทึกแล้ว เจ้าหน้าที่ท่านอื่นในระบบจะสามารถมองเห็นข้อมูลนี้ได้</p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {activeTab === 'mindmap' && (
+                            <div className="bg-white rounded-lg shadow p-4">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h3 className="text-lg font-bold">แผนผังความเชื่อมโยงเป้าหมาย (Mind Map)</h3>
+                                    <button onClick={() => exportPDF('pdf-mindmap-container', 'MindMap')} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded text-sm shadow">
+                                        <i className="fas fa-file-pdf mr-2"></i> ส่งออก PDF
+                                    </button>
+                                </div>
+                                <div id="pdf-mindmap-container" className="p-4 bg-white">
+                                    <div className="text-center mb-4 hidden print-header">
+                                        <h2 className="text-2xl font-bold">แผนผังความเชื่อมโยงเป้าหมาย</h2>
+                                        <p className="text-lg">หมายจับ/คดี: {targetInfo.caseNo} | ผู้ต้องหา: {targetInfo.targetName}</p>
+                                        <p className="text-sm">ผู้รับผิดชอบ: {targetInfo.officerName || '-'}</p>
+                                        <hr className="my-2" />
+                                    </div>
+                                    <div id="network-canvas"></div>
+                                    <p className="text-sm text-gray-500 mt-2 text-center">* สามารถใช้เมาส์ซูมเข้า-ออก หรือลากโหนดเพื่อจัดระเบียบแผนผังได้</p>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'dashboard' && (
+                            <div className="bg-white rounded-lg shadow p-4">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h3 className="text-lg font-bold">สรุปความคืบหน้าการรวบรวมข้อมูล</h3>
+                                    <button onClick={() => exportPDF('pdf-dashboard-container', 'Dashboard')} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded text-sm shadow">
+                                        <i className="fas fa-file-pdf mr-2"></i> ส่งออก PDF
+                                    </button>
+                                </div>
+                                <div id="pdf-dashboard-container" className="p-4 bg-white">
+                                    <div className="text-center mb-6 border-b pb-4">
+                                        <h2 className="text-2xl font-bold">รายงานสรุปข้อมูลเป้าหมาย</h2>
+                                        <div className="flex justify-center space-x-8 mt-2 text-gray-700">
+                                            <p><strong>หมายจับ/คดี:</strong> {targetInfo.caseNo || '-'}</p>
+                                            <p><strong>ผู้ต้องหา:</strong> {targetInfo.targetName || '-'}</p>
+                                            <p><strong>ผู้รับผิดชอบ:</strong> {targetInfo.officerName || '-'}</p>
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                        {categories.map((cat) => {
+                                            const totalFields = cat.fields.length;
+                                            const filledFields = cat.fields.filter(field => {
+                                                const vals = checklistData[`${cat.id}_${field}`];
+                                                return vals && vals.some(v => v && String(v).trim() !== '');
+                                            }).length;
+                                            const progress = totalFields === 0 ? 0 : Math.round((filledFields / totalFields) * 100);
+                                            
+                                            return (
+                                                <div key={cat.id} className="border border-gray-200 rounded p-4 bg-gray-50">
+                                                    <div className="flex justify-between items-center mb-2">
+                                                        <span className="font-semibold text-gray-700 text-sm">{cat.name}</span>
+                                                        <span className={`text-xs font-bold px-2 py-1 rounded-full ${progress === 100 ? 'bg-green-100 text-green-800' : progress > 0 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>
+                                                            {progress}%
+                                                        </span>
+                                                    </div>
+                                                    <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
+                                                        <div className={`h-2 rounded-full ${progress === 100 ? 'bg-green-500' : progress > 0 ? 'bg-yellow-400' : 'bg-red-500'}`} style={{ width: `${progress}%` }}></div>
+                                                    </div>
+                                                    <p className="text-xs text-gray-500 text-right">{filledFields} / {totalFields} รายการ</p>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'history' && (
+                            <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                                <div className="p-6 border-b border-gray-200 bg-gray-50 flex flex-col md:flex-row justify-between items-center gap-4">
+                                    <div>
+                                        <h3 className="text-lg font-bold text-gray-800">ฐานข้อมูลประวัติ Checklist (ส่วนกลาง)</h3>
+                                        <p className="text-sm text-gray-500">ข้อมูลทั้งหมดที่ถูกบันทึกขึ้นระบบออนไลน์ เจ้าหน้าที่สามารถร่วมกันตรวจสอบได้</p>
+                                    </div>
+                                    <div className="relative w-full md:w-64">
+                                        <input type="text" placeholder="ค้นหาชื่อ, เลขคดี..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-blue-500 focus:border-blue-500 text-sm" />
+                                        <i className="fas fa-search absolute left-3 top-3 text-gray-400"></i>
+                                    </div>
+                                </div>
+                                <div className="overflow-x-auto">
+                                    <table className="min-w-full divide-y divide-gray-200">
+                                        <thead className="bg-gray-100">
+                                            <tr>
+                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">วันเวลาที่บันทึก</th>
+                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">เลขคดี / หมายจับ</th>
+                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ชื่อเป้าหมาย</th>
+                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ผู้รับผิดชอบ</th>
+                                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">สถานะ</th>
+                                                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">การจัดการ</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="bg-white divide-y divide-gray-200">
+                                            {allCasesHistory.length === 0 ? (
+                                                <tr><td colSpan="6" className="px-6 py-8 text-center text-gray-500">กำลังโหลดข้อมูล หรือยังไม่มีข้อมูลในระบบออนไลน์</td></tr>
+                                            ) : (
+                                                allCasesHistory.filter(item => {
+                                                    const term = searchTerm.toLowerCase();
+                                                    return (item.targetInfo?.targetName?.toLowerCase().includes(term) || 
+                                                            item.targetInfo?.caseNo?.toLowerCase().includes(term) ||
+                                                            item.targetInfo?.officerName?.toLowerCase().includes(term));
+                                                }).map((item, idx) => (
+                                                    <tr key={item.id || idx} className="hover:bg-gray-50 transition-colors">
+                                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                            {new Date(item.updatedAt).toLocaleString('th-TH')}
+                                                        </td>
+                                                        <td className="px-6 py-4 whitespace-nowrap">
+                                                            <div className="text-sm font-medium text-gray-900">{item.targetInfo?.caseNo || '-'}</div>
+                                                        </td>
+                                                        <td className="px-6 py-4 whitespace-nowrap">
+                                                            <div className="text-sm font-bold text-blue-600">{item.targetInfo?.targetName || 'ไม่ระบุชื่อ'}</div>
+                                                        </td>
+                                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                            {item.targetInfo?.officerName || '-'}
+                                                        </td>
+                                                        <td className="px-6 py-4 whitespace-nowrap">
+                                                            <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                                                                ออนไลน์
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                                            {/* แยกปุ่มให้ชัดเจน: ดู Dashboard และ ดู Mind Map */}
+                                                            <button onClick={() => loadCaseForDashboard(item)} className="text-purple-600 hover:text-purple-900 mx-2" title="ดูสรุปข้อมูล (Dashboard)">
+                                                                <i className="fas fa-chart-pie text-lg"></i>
+                                                            </button>
+                                                            <button onClick={() => loadCaseForMindMap(item)} className="text-blue-600 hover:text-blue-900 mx-2" title="ดูแผนผัง (Mind Map)">
+                                                                <i className="fas fa-project-diagram text-lg"></i>
+                                                            </button>
+                                                            <button onClick={() => loadCaseForEdit(item)} className="text-yellow-500 hover:text-yellow-700 mx-2" title="นำมาแก้ไข">
+                                                                <i className="fas fa-edit text-lg"></i>
+                                                            </button>
+                                                            <button onClick={() => requestDeleteCase(item.id, item.targetInfo?.targetName)} className="text-red-500 hover:text-red-700 mx-2" title="ลบข้อมูล">
+                                                                <i className="fas fa-trash-alt text-lg"></i>
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                ))
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
+                    </main>
+
+                    {modalInfo.isOpen && (
+                        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                            <div className="bg-white rounded-lg shadow-xl p-6 max-w-sm w-full animate-fade-in-up">
+                                <h3 className="text-lg font-bold text-gray-900 mb-2">{modalInfo.title}</h3>
+                                <p className="text-gray-600 mb-6 text-sm">{modalInfo.message}</p>
+                                <button onClick={closeModal} className="w-full bg-blue-600 text-white rounded-lg py-2 font-medium hover:bg-blue-700 transition">ตกลง</button>
+                            </div>
                         </div>
                     )}
 
-                    <main className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
-                        <div className="flex border-b border-gray-200 mb-6 bg-white rounded-t-xl px-4 pt-2 shadow-sm overflow-x-auto">
-                            <button onClick={() => setActiveTab('checklist')} className={`px-6 py-3 text-sm focus:outline-none whitespace-nowrap ${activeTab === 'checklist' ? 'tab-active' : 'tab-inactive'}`}>
-                                📝 Checklist
-                            </button>
-                            <button onClick={() => setActiveTab('mindmap')} className={`px-6 py-3 text-sm focus:outline-none whitespace-nowrap ${activeTab === 'mindmap' ? 'tab-active' : 'tab-inactive'}`}>
-                                🕸️ แผนผังความเชื่อมโยง (Mind Map)
-                            </button>
-                            <button onClick={() => setActiveTab('dashboard')} className={`px-6 py-3 text-sm focus:outline-none whitespace-nowrap ${activeTab === 'dashboard' ? 'tab-active' : 'tab-inactive'}`}>
-                                📊 สรุปข้อมูล (Dashboard)
-                            </button>
-                            <button onClick={() => setActiveTab('search')} className={`px-6 py-3 text-sm focus:outline-none whitespace-nowrap ${activeTab === 'search' ? 'tab-active' : 'tab-inactive'}`}>
-                                🔍 ค้นหาประวัติเป้าหมาย
-                            </button>
-                            <button onClick={() => setActiveTab('history')} className={`px-6 py-3 text-sm focus:outline-none whitespace-nowrap ${activeTab === 'history' ? 'tab-active' : 'tab-inactive'}`}>
-                                🕒 ประวัติ Checklist
-                            </button>
+                    {confirmModal.isOpen && (
+                        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+                            <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full border-t-4 border-red-500">
+                                <div className="flex items-center mb-4">
+                                    <div className="bg-red-100 p-2 rounded-full mr-3">
+                                        <i className="fas fa-exclamation-triangle text-red-600 text-xl"></i>
+                                    </div>
+                                    <h3 className="text-xl font-bold text-gray-900">{confirmModal.title}</h3>
+                                </div>
+                                <p className="text-gray-600 mb-6 whitespace-pre-line text-sm">{confirmModal.message}</p>
+                                <div className="flex justify-end space-x-3">
+                                    <button onClick={closeConfirm} className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 font-medium transition">ยกเลิก</button>
+                                    <button onClick={confirmModal.onConfirm} className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 font-medium shadow-sm transition">ยืนยันการลบ</button>
+                                </div>
+                            </div>
                         </div>
+                    )}
 
-                        <div>
-                            {activeTab === 'checklist' && renderChecklist()}
-                            {activeTab === 'mindmap' && renderMindMap()}
-                            {activeTab === 'dashboard' && renderDashboard()}
-                            {activeTab === 'search' && renderSearch()}
-                            {activeTab === 'history' && renderHistory()}
-                        </div>
-                    </main>
-
-                    <footer className="bg-[#0f172a] text-gray-300 border-t border-gray-700 mt-8">
-                        <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8 text-center">
-                            <p className="text-sm">
-                                 สืบสวนกองกำกับการ1 กองบังคับการปฏิบัติการพิเศษ| © 2026 ผู้พัฒนา ด.ต.วิชิระ เชื้อกระโซ่ ผบ.หมู่ กก.1 บก.ปพ.
-                            </p>
-                        </div>
-                    </footer>
+                    <style>{`
+                        @keyframes fadeInUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+                        .animate-fade-in-up { animation: fadeInUp 0.3s ease-out; }
+                        @media print { .print-header { display: block !important; } }
+                    `}</style>
                 </div>
             );
-        }
+        };
 
-        ReactDOM.render(<App />, document.getElementById('root'));
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
     </script>
 </body>
 </html>
