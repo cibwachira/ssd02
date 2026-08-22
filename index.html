@@ -55,54 +55,6 @@
             }
         };
     </script>
-
-    <script>
-        // ================================================================
-        // Local Storage: ใช้เป็นฐานข้อมูลสำรอง เพื่อให้ระบบใช้งานได้จริง
-        // แม้เปิดไฟล์ HTML โดยตรง หรือยังไม่ได้ตั้งค่า Firebase
-        // ================================================================
-        window.CASE_STORAGE_KEY = 'csd_investigation_cases_v2';
-
-        window.getLocalCases = function() {
-            try {
-                const raw = localStorage.getItem(window.CASE_STORAGE_KEY);
-                const data = raw ? JSON.parse(raw) : [];
-                return Array.isArray(data) ? data : [];
-            } catch (e) {
-                console.error('Local storage read error:', e);
-                return [];
-            }
-        };
-
-        window.saveLocalCase = function(caseData, caseId) {
-            const list = window.getLocalCases();
-            const id = caseId || ('local_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8));
-            const now = Date.now();
-            const index = list.findIndex(item => item.id === id);
-            const existing = index >= 0 ? list[index] : {};
-            const saved = {
-                ...existing,
-                ...caseData,
-                id,
-                createdAt: existing.createdAt || caseData.createdAt || now,
-                updatedAt: now,
-                storage: 'local'
-            };
-            if (index >= 0) list[index] = saved;
-            else list.unshift(saved);
-            localStorage.setItem(window.CASE_STORAGE_KEY, JSON.stringify(list));
-            return saved;
-        };
-
-        window.deleteLocalCase = function(caseId) {
-            const list = window.getLocalCases().filter(item => item.id !== caseId);
-            localStorage.setItem(window.CASE_STORAGE_KEY, JSON.stringify(list));
-        };
-
-        window.hasFirebaseConfig = function() {
-            return typeof __firebase_config !== 'undefined' && !!__firebase_config;
-        };
-    </script>
 </head>
 <body>
     <div id="root"></div>
@@ -162,24 +114,17 @@
 
             const fetchAllHistory = async () => {
                 try {
-                    // แสดงข้อมูลที่บันทึกในเครื่องก่อนทันที
-                    const localList = window.getLocalCases().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-                    setAllCasesHistory(localList);
-
-                    // ถ้ามี Firebase ให้โหลดข้อมูลออนไลน์และใช้เป็นแหล่งข้อมูลหลัก
                     const fb = await window.initFirebase();
                     if (!fb) return;
                     const casesRef = fb.collection(fb.db, 'artifacts', fb.appId, 'public', 'data', 'cases');
                     const snapshot = await fb.getDocs(casesRef);
-                    const remoteList = [];
+                    let list = [];
                     snapshot.forEach(docSnap => {
-                        remoteList.push({ id: docSnap.id, ...docSnap.data(), storage: 'firebase' });
+                        list.push({ id: docSnap.id, ...docSnap.data() });
                     });
-                    remoteList.sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0));
-                    setAllCasesHistory(remoteList);
+                    setAllCasesHistory(list);
                 } catch (e) {
-                    console.error('Error fetching history:', e);
-                    setAllCasesHistory(window.getLocalCases());
+                    console.error("Error fetching history", e);
                 }
             };
 
@@ -311,29 +256,42 @@
             const handleSearchDatabase = async (e) => {
                 e.preventDefault();
                 if (!searchQuery.trim()) {
-                    showModal('แจ้งเตือน', 'กรุณากรอกชื่อ เลขคดี ผู้รับผิดชอบ หรือเลขบัตรประชาชนสำหรับค้นหา');
+                    showModal('แจ้งเตือน', 'กรุณากรอกชื่อ หรือเลขบัตรประชาชนสำหรับค้นหา');
                     return;
                 }
 
                 setIsSearching(true);
                 try {
-                    let source = window.getLocalCases();
                     const fb = await window.initFirebase();
-
-                    if (fb) {
-                        const casesRef = fb.collection(fb.db, 'artifacts', fb.appId, 'public', 'data', 'cases');
-                        const snapshot = await fb.getDocs(casesRef);
-                        source = [];
-                        snapshot.forEach(docSnap => source.push({ id: docSnap.id, ...docSnap.data(), storage: 'firebase' }));
+                    if (!fb) {
+                        showModal('ข้อผิดพลาด', 'ไม่สามารถเชื่อมต่อฐานข้อมูลเพื่อค้นหาได้');
+                        setIsSearching(false);
+                        return;
                     }
 
+                    const casesRef = fb.collection(fb.db, 'artifacts', fb.appId, 'public', 'data', 'cases');
+                    const snapshot = await fb.getDocs(casesRef);
+                    
+                    let results = [];
                     const queryStr = searchQuery.toLowerCase().trim();
-                    const results = source.filter(data => {
+
+                    snapshot.forEach(docSnap => {
+                        const data = docSnap.data();
                         const tName = (data.targetName || '').toLowerCase();
                         const cNum = (data.caseNumber || '').toLowerCase();
                         const oName = (data.officerName || '').toLowerCase();
-                        const idCard = ((data.formData && data.formData['1_3']) || []).join(' ').toLowerCase();
-                        return tName.includes(queryStr) || cNum.includes(queryStr) || oName.includes(queryStr) || idCard.includes(queryStr);
+                        
+                        let idCardMatch = false;
+                        if (data.formData && data.formData['1_3']) {
+                            idCardMatch = data.formData['1_3'].some(val => (val || '').toLowerCase().includes(queryStr));
+                        }
+
+                        if (tName.includes(queryStr) || cNum.includes(queryStr) || oName.includes(queryStr) || idCardMatch) {
+                            results.push({
+                                id: docSnap.id,
+                                ...data
+                            });
+                        }
                     });
 
                     setSearchResults(results);
@@ -341,21 +299,21 @@
                         showModal('ไม่พบผลการค้นหา', `ไม่พบประวัติเป้าหมายที่ตรงกับ "${searchQuery}"`);
                     }
                 } catch (error) {
-                    console.error('Search error:', error);
+                    console.error("Search error:", error);
                     showModal('เกิดข้อผิดพลาด', 'ไม่สามารถค้นหาข้อมูลได้: ' + error.message);
                 }
                 setIsSearching(false);
             };
 
-            const handleLoadCaseFromHistory = (caseData, tab = 'checklist') => {
+            const handleLoadCaseFromHistory = (caseData) => {
                 setCurrentCaseId(caseData.id || null);
                 setTargetName(caseData.targetName || '');
                 setCaseNumber(caseData.caseNumber || '');
                 setOfficerName(caseData.officerName || '');
                 setFormData(caseData.formData || {});
                 if (caseData.categories) setCategories(caseData.categories);
-                setActiveTab(tab);
-                showModal('โหลดข้อมูลสำเร็จ', `ดึงข้อมูลของ "${caseData.targetName || 'ไม่ระบุชื่อ'}" มาแสดงเรียบร้อยแล้ว`);
+                setActiveTab('checklist');
+                showModal('โหลดข้อมูลสำเร็จ', `ดึงข้อมูลของ "${caseData.targetName}" มาแสดงเรียบร้อยแล้ว`);
             };
 
             // ฟังก์ชันขอยืนยันก่อนแก้ไขข้อมูลจากประวัติ
@@ -378,24 +336,25 @@
                     async () => {
                         closeConfirm();
                         try {
-                            // ลบจากเครื่องเสมอ
-                            window.deleteLocalCase(caseId);
-
-                            // ถ้าเป็นข้อมูล Firebase ให้ลบจากออนไลน์ด้วย
                             const fb = await window.initFirebase();
-                            if (fb && !String(caseId).startsWith('local_')) {
-                                const docRef = fb.doc(fb.db, 'artifacts', fb.appId, 'public', 'data', 'cases', caseId);
-                                await fb.deleteDoc(docRef);
+                            if (!fb) {
+                                showModal('ข้อผิดพลาด', 'ไม่สามารถเชื่อมต่อฐานข้อมูลได้');
+                                return;
                             }
-
-                            setAllCasesHistory(prev => prev.filter(item => item.id !== caseId));
-                            setSearchResults(prev => prev.filter(item => item.id !== caseId));
+                            const docRef = fb.doc(fb.db, 'artifacts', fb.appId, 'public', 'data', 'cases', caseId);
+                            // ใช้ deleteDoc ในการลบข้อมูลจริงออกจากฐานข้อมูล Firestore
+                            await fb.deleteDoc(docRef);
+                            
+                            // อัปเดตรายการในหน้าจอ
+                            setAllCasesHistory(allCasesHistory.filter(item => item.id !== caseId));
+                            setSearchResults(searchResults.filter(item => item.id !== caseId));
+                            
                             if (currentCaseId === caseId) {
                                 setCurrentCaseId(null);
                             }
                             showModal('ลบข้อมูลสำเร็จ', 'ลบประวัติเป้าหมายออกจากระบบเรียบร้อยแล้ว');
                         } catch (error) {
-                            console.error('Delete error:', error);
+                            console.error("Delete error:", error);
                             showModal('เกิดข้อผิดพลาด', 'ไม่สามารถลบข้อมูลได้: ' + error.message);
                         }
                     }
@@ -403,21 +362,27 @@
             };
 
             const handleShareOnline = async () => {
-                if (isSharedView) return;
                 setIsSharing(true);
                 try {
                     const fb = await window.initFirebase();
                     if (!fb) {
-                        showModal('ยังไม่สามารถแชร์ออนไลน์ได้', 'ระบบสามารถบันทึกข้อมูลในเครื่องได้แล้ว แต่การแชร์ออนไลน์ต้องตั้งค่า Firebase ก่อน');
+                        showModal('ไม่สามารถแชร์ได้', 'ระบบฐานข้อมูลไม่ได้เชื่อมต่อ');
                         setIsSharing(false);
                         return;
                     }
 
                     const casesRef = fb.collection(fb.db, 'artifacts', fb.appId, 'public', 'data', 'cases');
-                    const payload = { targetName, caseNumber, officerName, formData, categories, updatedAt: Date.now() };
+                    const payload = {
+                        targetName,
+                        caseNumber,
+                        officerName,
+                        formData,
+                        categories,
+                        updatedAt: Date.now()
+                    };
+                    
                     let targetDocRef;
-
-                    if (currentCaseId && !String(currentCaseId).startsWith('local_')) {
+                    if (currentCaseId) {
                         targetDocRef = fb.doc(fb.db, 'artifacts', fb.appId, 'public', 'data', 'cases', currentCaseId);
                         await fb.setDoc(targetDocRef, payload, { merge: true });
                     } else {
@@ -428,226 +393,113 @@
 
                     const baseUrl = window.location.origin + window.location.pathname;
                     const shareUrl = `${baseUrl}?caseId=${targetDocRef.id}`;
-                    try { await navigator.clipboard.writeText(shareUrl); } catch (_) {
-                        const textArea = document.createElement('textarea');
-                        textArea.value = shareUrl;
-                        document.body.appendChild(textArea);
-                        textArea.select();
-                        document.execCommand('copy');
-                        textArea.remove();
-                    }
-                    await fetchAllHistory();
-                    showModal('แชร์ข้อมูลออนไลน์สำเร็จ!', `คัดลอกลิงก์สำหรับแชร์แล้ว\n\n${shareUrl}`);
+                    
+                    const textArea = document.createElement("textarea");
+                    textArea.value = shareUrl;
+                    document.body.appendChild(textArea);
+                    textArea.select();
+                    document.execCommand("copy");
+                    document.body.removeChild(textArea);
+                    
+                    showModal('แชร์ข้อมูลออนไลน์สำเร็จ!', `คัดลอกลิงก์สำหรับแชร์ลงคลิปบอร์ดแล้ว\n\n${shareUrl}`);
+                    fetchAllHistory();
+
                 } catch (error) {
-                    console.error('Share error:', error);
+                    console.error("Share error:", error);
                     showModal('เกิดข้อผิดพลาด', `ไม่สามารถแชร์ได้: ${error.message}`);
-                } finally {
-                    setIsSharing(false);
                 }
+                setIsSharing(false);
             };
 
             const handleSave = async () => {
                 if (isSharedView) return;
-
-                if (!targetName.trim() && !caseNumber.trim()) {
-                    showModal('กรุณาระบุข้อมูล', 'กรุณากรอกอย่างน้อย "ชื่อ-สกุล เป้าหมาย" หรือ "เลขคดี / หมายจับ" ก่อนบันทึก');
-                    return;
-                }
-
                 setIsSaving(true);
                 try {
-                    const now = Date.now();
-                    const localId = currentCaseId || ('local_' + now + '_' + Math.random().toString(36).slice(2, 8));
-                    const payload = {
-                        targetName: targetName.trim(),
-                        caseNumber: caseNumber.trim(),
-                        officerName: officerName.trim(),
-                        formData,
-                        categories,
-                        updatedAt: now
-                    };
-
-                    // 1) บันทึกในเครื่องก่อน เพื่อไม่ให้ข้อมูลหายแม้ไม่มี Firebase
-                    const localSaved = window.saveLocalCase(payload, localId);
-                    setCurrentCaseId(currentCaseId || localSaved.id);
-
-                    // 2) ถ้ามี Firebase ให้บันทึกออนไลน์เพิ่มเติม
                     const fb = await window.initFirebase();
-                    let onlineSaved = false;
                     if (fb) {
                         const casesRef = fb.collection(fb.db, 'artifacts', fb.appId, 'public', 'data', 'cases');
-                        if (currentCaseId && !String(currentCaseId).startsWith('local_')) {
+                        const payload = {
+                            targetName,
+                            caseNumber,
+                            officerName,
+                            formData,
+                            categories,
+                            updatedAt: Date.now()
+                        };
+                        if (currentCaseId) {
                             const docRef = fb.doc(fb.db, 'artifacts', fb.appId, 'public', 'data', 'cases', currentCaseId);
                             await fb.setDoc(docRef, payload, { merge: true });
-                            onlineSaved = true;
                         } else {
-                            const docRef = await fb.addDoc(casesRef, { ...payload, createdAt: now });
+                            payload.createdAt = Date.now();
+                            const docRef = await fb.addDoc(casesRef, payload);
                             setCurrentCaseId(docRef.id);
-                            onlineSaved = true;
                         }
+                        fetchAllHistory();
                     }
-
-                    // 3) อัปเดตประวัติบนหน้าจอทันที
-                    if (onlineSaved) {
-                        await fetchAllHistory();
-                    } else {
-                        setAllCasesHistory(prev => {
-                            const exists = prev.some(item => item.id === localSaved.id);
-                            const next = exists ? prev.map(item => item.id === localSaved.id ? localSaved : item) : [localSaved, ...prev];
-                            return next.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-                        });
-                    }
-
                     setIsSaving(false);
-                    showModal('บันทึกสำเร็จ', onlineSaved
-                        ? 'บันทึกข้อมูล Checklist ลงฐานข้อมูลออนไลน์แล้ว และข้อมูลจะแสดงในประวัติทันที'
-                        : 'บันทึกข้อมูล Checklist ลงในเครื่องแล้ว ข้อมูลจะแสดงในประวัติทันที');
+                    showModal('บันทึกสำเร็จ', 'บันทึกข้อมูล Checklist ลงในระบบเรียบร้อยแล้ว');
                 } catch (error) {
-                    console.error('Save error:', error);
+                    console.error("Save error:", error);
                     setIsSaving(false);
-                    showModal('เกิดข้อผิดพลาด', 'ไม่สามารถบันทึกข้อมูลได้: ' + error.message);
+                    showModal('เกิดข้อผิดพลาด', 'ไม่สามารถบันทึกข้อมูลลงฐานข้อมูลได้');
                 }
             };
 
-            const exportMindMapPDF = async () => {
+            const exportMindMapPDF = () => {
                 const element = document.getElementById('mindmap-export-container');
                 const graphContainer = document.getElementById('network-container');
-
-                if (!element || !graphContainer) {
-                    showModal('แจ้งเตือน', 'ไม่พบพื้นที่ Mind Map สำหรับส่งออก');
-                    return;
-                }
-
-                // ตรวจสอบว่ามีข้อมูลจริงก่อนส่งออก
-                const filledCount = Object.values(formData || {})
-                    .flat()
-                    .filter(v => v !== null && v !== undefined && String(v).trim() !== '').length;
-
-                if (filledCount === 0) {
-                    showModal('แจ้งเตือน', 'ยังไม่มีข้อมูลใน Mind Map กรุณากรอกข้อมูลใน Checklist ก่อนส่งออก');
+                const canvas = graphContainer.querySelector('canvas');
+                
+                if (!canvas) {
+                    showModal('แจ้งเตือน', "ไม่พบข้อมูลกราฟ กรุณาเพิ่มข้อมูลก่อนส่งออก");
                     return;
                 }
 
                 try {
-                    // ให้ vis-network จัดตำแหน่ง Node ทั้งหมดให้อยู่ในกรอบก่อนจับภาพ
-                    if (window.currentMindMapNetwork) {
-                        try {
-                            window.currentMindMapNetwork.fit({
-                                animation: false
-                            });
-                            window.currentMindMapNetwork.redraw();
-                        } catch (e) {
-                            console.warn('Network fit error:', e);
-                        }
-                    }
-
-                    // รอให้ Canvas วาดข้อมูลล่าสุดเสร็จ
-                    await new Promise(resolve => setTimeout(resolve, 700));
-
-                    const canvas = graphContainer.querySelector('canvas');
-                    if (!canvas) {
-                        showModal('แจ้งเตือน', 'ไม่พบข้อมูลกราฟ กรุณาเปิดหน้า Mind Map อีกครั้ง');
-                        return;
-                    }
-
-                    // สร้าง Canvas ใหม่เพื่อบังคับพื้นหลังสีขาว
-                    // และคงข้อความ/Node ที่ vis-network วาดไว้ทั้งหมด
-                    const exportScale = 2;
                     const tempCanvas = document.createElement('canvas');
-                    tempCanvas.width = canvas.width * exportScale;
-                    tempCanvas.height = canvas.height * exportScale;
-
+                    tempCanvas.width = canvas.width;
+                    tempCanvas.height = canvas.height;
                     const ctx = tempCanvas.getContext('2d');
                     ctx.fillStyle = '#ffffff';
                     ctx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-                    ctx.imageSmoothingEnabled = true;
-                    ctx.drawImage(
-                        canvas,
-                        0, 0, canvas.width, canvas.height,
-                        0, 0, tempCanvas.width, tempCanvas.height
-                    );
+                    ctx.drawImage(canvas, 0, 0);
 
-                    const imgData = tempCanvas.toDataURL('image/jpeg', 0.98);
-
-                    // สร้างพื้นที่สำหรับ PDF โดยไม่ใช้ Canvas ของ vis-network โดยตรง
-                    const pdfWrapper = document.createElement('div');
-                    pdfWrapper.id = 'mindmap-pdf-temp-wrapper';
-                    pdfWrapper.style.background = '#ffffff';
-                    pdfWrapper.style.width = '100%';
-                    pdfWrapper.style.padding = '12px';
-                    pdfWrapper.style.boxSizing = 'border-box';
-                    pdfWrapper.style.fontFamily = 'Sarabun, sans-serif';
-
-                    const title = document.createElement('div');
-                    title.style.textAlign = 'center';
-                    title.style.marginBottom = '10px';
-
-                    const h = document.createElement('h2');
-                    h.textContent = `ผังความเชื่อมโยง (Mind Map) - ${targetName || 'ไม่ระบุเป้าหมาย'}`;
-                    h.style.margin = '0 0 6px 0';
-                    h.style.fontSize = '22px';
-                    h.style.fontWeight = '700';
-                    h.style.color = '#111827';
-
-                    const info = document.createElement('div');
-                    info.textContent = `เลขคดี: ${caseNumber || '-'}  |  ผู้รับผิดชอบ: ${officerName || '-'}  |  จำนวนข้อมูล: ${filledCount} รายการ`;
-                    info.style.fontSize = '13px';
-                    info.style.color = '#4b5563';
-
-                    title.appendChild(h);
-                    title.appendChild(info);
-
+                    const imgData = tempCanvas.toDataURL('image/jpeg', 1.0);
                     const img = document.createElement('img');
                     img.src = imgData;
-                    img.style.display = 'block';
+                    img.id = 'temp-graph-img';
                     img.style.width = '100%';
-                    img.style.height = 'auto';
-                    img.style.border = '1px solid #d1d5db';
-                    img.style.boxSizing = 'border-box';
-
-                    pdfWrapper.appendChild(title);
-                    pdfWrapper.appendChild(img);
-
-                    document.body.appendChild(pdfWrapper);
-
-                    const safeName = (targetName || 'Target')
-                        .replace(/[\\/:*?"<>|]/g, '_')
-                        .trim();
+                    img.style.border = '1px solid #e5e7eb';
+                    img.style.borderRadius = '0.5rem';
+                    
+                    graphContainer.style.display = 'none';
+                    graphContainer.parentNode.insertBefore(img, graphContainer);
 
                     const opt = {
-                        margin: 6,
-                        filename: `MindMap_${safeName || 'Target'}.pdf`,
+                        margin: 10,
+                        filename: `MindMap_${targetName || 'Target'}.pdf`,
                         image: { type: 'jpeg', quality: 0.98 },
-                        html2canvas: {
-                            scale: 2,
-                            useCORS: true,
-                            backgroundColor: '#ffffff',
-                            logging: false
-                        },
-                        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
-                        jsPDF: {
-                            unit: 'mm',
-                            format: 'a4',
-                            orientation: 'landscape',
-                            compress: true
-                        }
+                        html2canvas: { scale: 2, useCORS: true },
+                        jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' }
                     };
 
-                    await html2pdf().set(opt).from(pdfWrapper).save();
-
-                    pdfWrapper.remove();
-
-                    showModal(
-                        'ส่งออก PDF สำเร็จ',
-                        `สร้างไฟล์ Mind Map ของ "${targetName || 'ไม่ระบุเป้าหมาย'}" เรียบร้อยแล้ว\\nข้อมูลที่นำไปแสดงใน Node: ${filledCount} รายการ`
-                    );
-
+                    setTimeout(() => {
+                        try {
+                            html2pdf().set(opt).from(element).save().then(() => {
+                                const tempImg = document.getElementById('temp-graph-img');
+                                if (tempImg) tempImg.remove();
+                                graphContainer.style.display = 'block';
+                            });
+                        } catch (e) {
+                            const tempImg = document.getElementById('temp-graph-img');
+                            if (tempImg) tempImg.remove();
+                            graphContainer.style.display = 'block';
+                            console.error(e);
+                        }
+                    }, 800);
                 } catch (err) {
-                    const temp = document.getElementById('mindmap-pdf-temp-wrapper');
-                    if (temp) temp.remove();
-
-                    console.error('Mind Map PDF export error:', err);
-                    showModal('ข้อผิดพลาด', 'ไม่สามารถสร้างไฟล์ PDF ได้: ' + (err.message || err));
+                    showModal('ข้อผิดพลาด', 'เกิดข้อผิดพลาดในการสร้างภาพ PDF');
+                    console.error(err);
                 }
             };
 
@@ -701,7 +553,7 @@
 
                     const data = { nodes: new vis.DataSet(nodesArray), edges: new vis.DataSet(edgesArray) };
                     const options = { layout: { improvedLayout: true }, physics: { stabilization: false, barnesHut: { springLength: 150 } } };
-                    window.currentMindMapNetwork = new vis.Network(container, data, options);
+                    new vis.Network(container, data, options);
                 }
             }, [activeTab, formData, categories, targetName]);
 
@@ -965,12 +817,9 @@
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
                     <div className="flex justify-between items-center mb-6">
                         <h2 className="text-xl font-bold text-gray-800">🕒 ประวัติการสร้าง Checklist ทั้งหมดในระบบ</h2>
-                        <div className="flex items-center gap-2">
-                            <span className="text-xs text-gray-500 hidden sm:inline">ข้อมูลจะถูกบันทึกและเรียกกลับมาใช้งานได้</span>
-                            <button onClick={fetchAllHistory} className="bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-semibold py-2 px-3 rounded-lg transition-colors">
-                                🔄 รีเฟรชข้อมูล
-                            </button>
-                        </div>
+                        <button onClick={fetchAllHistory} className="bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-semibold py-2 px-3 rounded-lg transition-colors">
+                            🔄 รีเฟรชข้อมูล
+                        </button>
                     </div>
                     <div className="overflow-x-auto">
                         <table className="w-full text-left border-collapse">
@@ -979,7 +828,6 @@
                                     <th className="p-3 border-b font-semibold">เลขคดี</th>
                                     <th className="p-3 border-b font-semibold">ชื่อเป้าหมาย</th>
                                     <th className="p-3 border-b font-semibold">ผู้รับผิดชอบ</th>
-                                    <th className="p-3 border-b font-semibold">ข้อมูล</th>
                                     <th className="p-3 border-b font-semibold">สถานะ</th>
                                     <th className="p-3 border-b font-semibold text-center">การจัดการ</th>
                                 </tr>
@@ -990,20 +838,18 @@
                                         <tr key={idx} className="hover:bg-gray-50 transition-colors">
                                             <td className="p-3 border-b text-sm font-medium">{item.caseNumber || '-'}</td>
                                             <td className="p-3 border-b text-sm font-semibold">{item.targetName || 'ไม่ระบุชื่อ'}</td>
-                                            <td className="p-3 border-b text-sm text-gray-600">{Object.values(item.formData || {}).flat().filter(v => v && String(v).trim()).length} รายการ</td>
+                                            <td className="p-3 border-b text-sm text-gray-600">{item.officerName || '-'}</td>
                                             <td className="p-3 border-b"><span className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs font-semibold">บันทึกแล้ว</span></td>
                                             <td className="p-3 border-b text-center space-x-2">
                                                 <button onClick={() => requestEditCase(item)} className="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1 rounded text-xs font-semibold transition-colors">แก้ไข</button>
                                                 <button onClick={() => requestDeleteCase(item.id, item.targetName)} className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-xs font-semibold transition-colors">ลบ</button>
-                                                <button onClick={() => handleLoadCaseFromHistory(item, 'checklist')} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-xs font-semibold transition-colors">Checklist</button>
-                                                <button onClick={() => handleLoadCaseFromHistory(item, 'mindmap')} className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1 rounded text-xs font-semibold transition-colors">Mind Map</button>
-                                                <button onClick={() => handleLoadCaseFromHistory(item, 'dashboard')} className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded text-xs font-semibold transition-colors">Dashboard</button>
+                                                <button onClick={() => handleLoadCaseFromHistory(item)} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-xs font-semibold transition-colors">เปิดดู</button>
                                             </td>
                                         </tr>
                                     ))
                                 ) : (
                                     <tr>
-                                        <td colSpan="6" className="text-center py-8 text-gray-400 italic">ยังไม่มีประวัติการบันทึกข้อมูลในระบบออนไลน์</td>
+                                        <td colSpan="5" className="text-center py-8 text-gray-400 italic">ยังไม่มีประวัติการบันทึกข้อมูลในระบบออนไลน์</td>
                                     </tr>
                                 )}
                             </tbody>
@@ -1095,14 +941,6 @@
                             {activeTab === 'history' && renderHistory()}
                         </div>
                     </main>
-
-                    <footer className="bg-[#0f172a] text-gray-300 border-t border-gray-700 mt-8">
-                        <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8 text-center">
-                            <p className="text-sm">
-                                 สืบสวนกองกำกับการ1 กองบังคับการปฏิบัติการพิเศษ| © 2026 ผู้พัฒนา ด.ต.วิชิระ เชื้อกระโซ่ ผบ.หมู่ กก.1 บก.ปพ.
-                            </p>
-                        </div>
-                    </footer>
                 </div>
             );
         }
